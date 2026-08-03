@@ -21,25 +21,26 @@ const FONTS = (
 );
 const uid = (p) => p + Math.random().toString(36).slice(2, 8);
 const nomMat = (s) => s ? `${s.prenoms} ${s.nom} — Matricule : ${s.matricule}` : "—";
+const MOIS = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
 
 /* ================= Données de démonstration ================= */
 const initClasses = () => ([
-  { id: "cl1", nom: "Petite Section" },
-  { id: "cl2", nom: "Moyenne Section" },
-  { id: "cl3", nom: "Grande Section" },
+  { id: "cl1", nom: "Petite Section", montantAnnuel: 150000 },
+  { id: "cl2", nom: "Moyenne Section", montantAnnuel: 150000 },
+  { id: "cl3", nom: "Grande Section", montantAnnuel: 150000 },
 ]);
 const initStudents = () => ([
-  { id: "e1", prenoms: "Léa", nom: "Bernard", sexe: "F", naissance: "2021-03-12", lieuNaissance: "", matricule: "MAT-0001", classeId: "cl1", parent: "Mme Bernard", telephone: "07 01 02 03 04", photo: null },
-  { id: "e2", prenoms: "Noah", nom: "Petit", sexe: "M", naissance: "2021-06-02", lieuNaissance: "", matricule: "MAT-0002", classeId: "cl1", parent: "M. Petit", telephone: "07 02 03 04 05", photo: null },
-  { id: "e3", prenoms: "Inès", nom: "Dubois", sexe: "F", naissance: "2020-01-20", lieuNaissance: "", matricule: "MAT-0003", classeId: "cl2", parent: "Mme Dubois", telephone: "07 03 04 05 06", photo: null },
-  { id: "e4", prenoms: "Rayan", nom: "Fontaine", sexe: "M", naissance: "2020-08-11", lieuNaissance: "", matricule: "MAT-0004", classeId: "cl2", parent: "M. Fontaine", telephone: "07 04 05 06 07", photo: null },
-  { id: "e5", prenoms: "Camille", nom: "Roy", sexe: "F", naissance: "2019-04-09", lieuNaissance: "", matricule: "MAT-0005", classeId: "cl3", parent: "Mme Roy", telephone: "07 05 06 07 08", photo: null },
-  { id: "e6", prenoms: "Hugo", nom: "Simon", sexe: "M", naissance: "2019-11-30", lieuNaissance: "", matricule: "MAT-0006", classeId: "cl3", parent: "M. Simon", telephone: "07 06 07 08 09", photo: null },
+  { id: "e1", prenoms: "Léa", nom: "Bernard", sexe: "F", naissance: "2021-03-12", lieuNaissance: "", statut: "Ancien", matricule: "MAT-0001", classeId: "cl1", parent: "Mme Bernard", telephone: "07 01 02 03 04", photo: null },
+  { id: "e2", prenoms: "Noah", nom: "Petit", sexe: "M", naissance: "2021-06-02", lieuNaissance: "", statut: "Ancien", matricule: "MAT-0002", classeId: "cl1", parent: "M. Petit", telephone: "07 02 03 04 05", photo: null },
+  { id: "e3", prenoms: "Inès", nom: "Dubois", sexe: "F", naissance: "2020-01-20", lieuNaissance: "", statut: "Nouveau", matricule: "MAT-0003", classeId: "cl2", parent: "Mme Dubois", telephone: "07 03 04 05 06", photo: null },
+  { id: "e4", prenoms: "Rayan", nom: "Fontaine", sexe: "M", naissance: "2020-08-11", lieuNaissance: "", statut: "Ancien", matricule: "MAT-0004", classeId: "cl2", parent: "M. Fontaine", telephone: "07 04 05 06 07", photo: null },
+  { id: "e5", prenoms: "Camille", nom: "Roy", sexe: "F", naissance: "2019-04-09", lieuNaissance: "", statut: "Nouveau", matricule: "MAT-0005", classeId: "cl3", parent: "Mme Roy", telephone: "07 05 06 07 08", photo: null },
+  { id: "e6", prenoms: "Hugo", nom: "Simon", sexe: "M", naissance: "2019-11-30", lieuNaissance: "", statut: "Ancien", matricule: "MAT-0006", classeId: "cl3", parent: "M. Simon", telephone: "07 06 07 08 09", photo: null },
 ]);
 const initTranches = () => ([
-  { id: "t1", nom: "1ère Tranche", montant: 50000, limite: "2026-05-15" },
-  { id: "t2", nom: "2e Tranche", montant: 50000, limite: "2026-09-15" },
-  { id: "t3", nom: "3e Tranche", montant: 50000, limite: "2027-01-15" },
+  { id: "t1", nom: "1ère Tranche", limite: "2026-05-15" },
+  { id: "t2", nom: "2e Tranche", limite: "2026-09-15" },
+  { id: "t3", nom: "3e Tranche", limite: "2027-01-15" },
 ]);
 const initPaiements = () => ([
   { id: "p1", studentId: "e1", trancheId: "t1", montant: 50000, date: "2026-05-02", mode: "Espèces" },
@@ -136,7 +137,7 @@ export default function App() {
   const [materiels, setMateriels] = useState(initMateriels());
 
   /* ---- Paramètres généraux (devise, bulletin, mot de passe comptabilité) ---- */
-  const [config, setConfig] = useState({ devise: "GNF", etablissement: "GROUPE SCOLAIRE PRIVÉ CARMEL", etablissementAdresse: "", etablissementTels: "", ire: "", dpe: "", anneeScolaire: "2026-2027", bareme: 20, comptaPassword: "compta2026", logo: null });
+  const [config, setConfig] = useState({ devise: "GNF", etablissement: "GROUPE SCOLAIRE PRIVÉ CARMEL", etablissementAdresse: "", etablissementTels: "", etablissementEmail: "", ire: "", dpe: "", anneeScolaire: "2026-2027", bareme: 20, comptaPassword: "compta2026", logo: null });
   const [periodes, setPeriodes] = useState(["Trimestre 1", "Trimestre 2", "Trimestre 3"]);
   const [nouvellePeriode, setNouvellePeriode] = useState("");
   const fmt = (n) => Number(n || 0).toLocaleString("fr-FR") + " " + config.devise;
@@ -169,7 +170,7 @@ export default function App() {
         setMatieresConfig(d.matieresConfig || initMatieres());
         setNotes(d.notes || initNotes());
         setMateriels(d.materiels || initMateriels());
-        setConfig(d.config || { devise: "GNF", etablissement: "GROUPE SCOLAIRE PRIVÉ CARMEL", etablissementAdresse: "", etablissementTels: "", ire: "", dpe: "", anneeScolaire: "2026-2027", bareme: 20, comptaPassword: "compta2026", logo: null });
+        setConfig(d.config || { devise: "GNF", etablissement: "GROUPE SCOLAIRE PRIVÉ CARMEL", etablissementAdresse: "", etablissementTels: "", etablissementEmail: "", ire: "", dpe: "", anneeScolaire: "2026-2027", bareme: 20, comptaPassword: "compta2026", logo: null });
         setPeriodes(d.periodes || ["Trimestre 1", "Trimestre 2", "Trimestre 3"]);
       } else {
         await supabase.from("app_state").insert({
@@ -177,7 +178,7 @@ export default function App() {
           data: {
             classes: initClasses(), students: initStudents(), tranches: initTranches(), paiements: initPaiements(),
             staff: initStaff(), paieHist: initPaieHist(), depenses: initDepenses(), matieresConfig: initMatieres(),
-            notes: initNotes(), materiels: initMateriels(), config: { devise: "GNF", etablissement: "GROUPE SCOLAIRE PRIVÉ CARMEL", etablissementAdresse: "", etablissementTels: "", ire: "", dpe: "", anneeScolaire: "2026-2027", bareme: 20, comptaPassword: "compta2026", logo: null },
+            notes: initNotes(), materiels: initMateriels(), config: { devise: "GNF", etablissement: "GROUPE SCOLAIRE PRIVÉ CARMEL", etablissementAdresse: "", etablissementTels: "", etablissementEmail: "", ire: "", dpe: "", anneeScolaire: "2026-2027", bareme: 20, comptaPassword: "compta2026", logo: null },
             periodes: ["Trimestre 1", "Trimestre 2", "Trimestre 3"],
           },
         });
@@ -228,12 +229,15 @@ export default function App() {
   /* ---- Comptabilité (+ Finance + Statistiques, sous contrôle du comptable) ---- */
   const [compTab, setCompTab] = useState("effectifs");
   const [trancheForm, setTrancheForm] = useState(null);
+  const [paieClasseFiltre, setPaieClasseFiltre] = useState("");
   const [paieForm, setPaieForm] = useState({ studentId: "", trancheId: "", montant: "", mode: "Espèces" });
   const [recuId, setRecuId] = useState(null);
   const [staffForm, setStaffForm] = useState(null);
+  const [paieAnnee, setPaieAnnee] = useState(new Date().getFullYear());
   const [depForm, setDepForm] = useState({ categorie: "", montant: "", description: "" });
   const [suiviClasse, setSuiviClasse] = useState("cl1");
   const [suiviSort, setSuiviSort] = useState({ champ: "nom", dir: 1 });
+  const [redevablesClasse, setRedevablesClasse] = useState("cl1");
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -242,16 +246,9 @@ export default function App() {
     const l = students.filter(s => s.classeId === classeId);
     return { garcons: l.filter(s => s.sexe === "M").length, filles: l.filter(s => s.sexe === "F").length, total: l.length };
   };
-  const totalTranches = tranches.reduce((s, t) => s + Number(t.montant), 0);
   const studentPaid = (id) => paiements.filter(p => p.studentId === id).reduce((s, p) => s + Number(p.montant), 0);
-  const trancheStatus = (studentId, trancheId) => {
-    const t = tranches.find(x => x.id === trancheId);
-    const paye = paiements.filter(p => p.studentId === studentId && p.trancheId === trancheId).reduce((s, p) => s + Number(p.montant), 0);
-    if (paye >= t.montant) return "Payé"; if (paye > 0) return "Partiel"; return "Impayé";
-  };
-  const alertes = tranches.filter(t => t.limite < today).flatMap(t =>
-    students.filter(s => trancheStatus(s.id, t.id) !== "Payé").map(s => ({ student: s, tranche: t }))
-  );
+  const studentAttendu = (s) => Number(classes.find(c => c.id === s?.classeId)?.montantAnnuel || 0);
+  const studentReste = (s) => studentAttendu(s) - studentPaid(s.id);
   const totalEntrees = paiements.reduce((s, p) => s + Number(p.montant), 0);
   const totalDepenses = depenses.reduce((s, d) => s + Number(d.montant), 0);
   const totalPaieVersee = paieHist.reduce((s, p) => s + Number(p.montant), 0);
@@ -270,8 +267,9 @@ export default function App() {
     reader.onload = () => setEleveForm(f => ({ ...f, photo: reader.result }));
     reader.readAsDataURL(file);
   };
-  const addClasse = () => { if (!nouvelleClasse.trim()) return; setClasses(prev => [...prev, { id: uid("cl"), nom: nouvelleClasse.trim() }]); setNouvelleClasse(""); };
+  const addClasse = () => { if (!nouvelleClasse.trim()) return; setClasses(prev => [...prev, { id: uid("cl"), nom: nouvelleClasse.trim(), montantAnnuel: 0 }]); setNouvelleClasse(""); };
   const renameClasse = (id, nom) => setClasses(prev => prev.map(c => c.id === id ? { ...c, nom } : c));
+  const setMontantAnnuelClasse = (id, montant) => setClasses(prev => prev.map(c => c.id === id ? { ...c, montantAnnuel: montant } : c));
   const deleteClasse = (id) => { setClasses(prev => prev.filter(c => c.id !== id)); if (classeSelectionnee === id) setClasseSelectionnee(null); };
   const addPeriode = () => { if (!nouvellePeriode.trim()) return; setPeriodes(prev => [...prev, nouvellePeriode.trim()]); setNouvellePeriode(""); };
   const renamePeriode = (i, val) => setPeriodes(prev => prev.map((p, idx) => idx === i ? val : p));
@@ -328,7 +326,7 @@ export default function App() {
 
   /* ---------- Actions Comptabilité / Finance ---------- */
   const saveTranche = () => {
-    if (!trancheForm.nom || !trancheForm.montant) return;
+    if (!trancheForm.nom) return;
     if (trancheForm.id) setTranches(prev => prev.map(t => t.id === trancheForm.id ? trancheForm : t));
     else setTranches(prev => [...prev, { ...trancheForm, id: uid("t") }]);
     setTrancheForm(null);
@@ -348,8 +346,8 @@ export default function App() {
     setStaffForm(null);
   };
   const deleteStaff = (id) => setStaff(prev => prev.filter(s => s.id !== id));
-  const payerStaff = (s) => setPaieHist(prev => [...prev, { id: uid("ph"), staffId: s.id, mois: new Date().toLocaleDateString("fr-FR", { month: "long", year: "numeric" }), montant: s.salaire, date: today }]);
-  const dejaPayeCeMois = (staffId) => { const m = new Date().toLocaleDateString("fr-FR", { month: "long", year: "numeric" }); return paieHist.some(p => p.staffId === staffId && p.mois === m); };
+  const dejaPayeMois = (staffId, moisLabel) => paieHist.some(p => p.staffId === staffId && p.mois === moisLabel);
+  const payerMois = (s, moisLabel) => setPaieHist(prev => [...prev, { id: uid("ph"), staffId: s.id, mois: moisLabel, montant: s.salaire, date: today }]);
   const addDepense = () => {
     if (!depForm.categorie || !depForm.montant) return;
     setDepenses(prev => [...prev, { id: uid("d"), ...depForm, montant: Number(depForm.montant), date: today }]);
@@ -453,8 +451,8 @@ export default function App() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
           <div className="f-display" style={{ fontSize: 22, color: C.text, fontWeight: 600 }}>Élèves</div>
           <div style={{ display: "flex", gap: 8 }}>
-            <Btn kind="ghost" onClick={() => exportCSV("eleves.csv", ["Prénoms", "Nom", "Sexe", "Naissance", "Matricule", "Classe", "Parent", "Téléphone"], list.map(s => [s.prenoms, s.nom, s.sexe, s.naissance, s.matricule, classes.find(c => c.id === s.classeId)?.nom, s.parent, s.telephone]))}><Download size={13} /> Exporter</Btn>
-            <Btn onClick={() => setEleveForm({ prenoms: "", nom: "", sexe: "F", naissance: "", lieuNaissance: "", matricule: "", classeId: classes[0]?.id || "", parent: "", telephone: "", photo: null })}><Plus size={13} /> Ajouter un élève</Btn>
+            <Btn kind="ghost" onClick={() => exportCSV("eleves.csv", ["Prénoms", "Nom", "Sexe", "Naissance", "Matricule", "Classe", "Statut", "Parent", "Téléphone"], list.map(s => [s.prenoms, s.nom, s.sexe, s.naissance, s.matricule, classes.find(c => c.id === s.classeId)?.nom, s.statut, s.parent, s.telephone]))}><Download size={13} /> Exporter</Btn>
+            <Btn onClick={() => setEleveForm({ prenoms: "", nom: "", sexe: "F", naissance: "", lieuNaissance: "", statut: "Nouveau", matricule: "", classeId: classes[0]?.id || "", parent: "", telephone: "", photo: null })}><Plus size={13} /> Ajouter un élève</Btn>
           </div>
         </div>
 
@@ -481,6 +479,7 @@ export default function App() {
                 <Select value={eleveForm.classeId} onChange={e => setEleveForm({ ...eleveForm, classeId: e.target.value })}>{classes.map(c => <option key={c.id} value={c.id}>{c.nom}</option>)}</Select>
                 <Input placeholder="Nom du parent" value={eleveForm.parent} onChange={e => setEleveForm({ ...eleveForm, parent: e.target.value })} />
                 <Input placeholder="Téléphone" value={eleveForm.telephone} onChange={e => setEleveForm({ ...eleveForm, telephone: e.target.value })} />
+                <Select value={eleveForm.statut || "Nouveau"} onChange={e => setEleveForm({ ...eleveForm, statut: e.target.value })}><option value="Nouveau">Nouveau</option><option value="Ancien">Ancien</option></Select>
               </div>
             </div>
             <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
@@ -504,6 +503,7 @@ export default function App() {
               <Th sortable onClick={() => toggleSort("naissance")}>Naissance</Th>
               <Th sortable onClick={() => toggleSort("matricule")}>Matricule</Th>
               <Th sortable onClick={() => toggleSort("classe")}>Classe</Th>
+              <Th sortable onClick={() => toggleSort("statut")}>Statut</Th>
               <Th>Parent</Th><Th>Téléphone</Th><Th>Actions</Th>
             </tr></thead>
             <tbody>
@@ -513,6 +513,7 @@ export default function App() {
                   <Td style={{ fontWeight: 600 }}>{s.prenoms} {s.nom}</Td>
                   <Td>{s.sexe}</Td><Td>{s.naissance}</Td><Td className="f-mono">{s.matricule}</Td>
                   <Td>{classes.find(c => c.id === s.classeId)?.nom || "—"}</Td>
+                  <Td><Pill_ text={s.statut || "Nouveau"} color={s.statut === "Ancien" ? C.brass : C.sage} bg={s.statut === "Ancien" ? C.brassSoft : C.sageSoft} /></Td>
                   <Td>{s.parent}</Td><Td>{s.telephone}</Td>
                   <Td><div style={{ display: "flex", gap: 4 }}>
                     <button onClick={() => setEleveForm(s)} style={{ background: "none", border: "none", cursor: "pointer" }}><Pencil size={14} color={C.textSoft} /></button>
@@ -520,7 +521,7 @@ export default function App() {
                   </div></Td>
                 </tr>
               ))}
-              {!list.length && <tr><Td style={{ textAlign: "center", color: C.textSoft }} colSpan={9}>Aucun élève trouvé.</Td></tr>}
+              {!list.length && <tr><Td style={{ textAlign: "center", color: C.textSoft }} colSpan={10}>Aucun élève trouvé.</Td></tr>}
             </tbody>
           </table>
         </Card>
@@ -543,6 +544,7 @@ export default function App() {
           {classes.map(c => (
             <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderTop: `1px solid ${C.line}` }}>
               <Input value={c.nom} onChange={e => renameClasse(c.id, e.target.value)} style={{ flex: 1 }} />
+              <Input placeholder="Cycle (ex : Secondaire)" value={c.cycle || ""} onChange={e => setClasses(prev => prev.map(x => x.id === c.id ? { ...x, cycle: e.target.value } : x))} style={{ width: 150 }} />
               <span style={{ fontSize: 11, color: C.textSoft }}>{classStats(c.id).total} élève(s)</span>
               <Btn kind="ghost" onClick={() => setClasseSelectionnee(c.id)}>Voir la liste</Btn>
               <button onClick={() => deleteClasse(c.id)} style={{ background: "none", border: "none", cursor: "pointer" }}><Trash2 size={14} color={C.rose} /></button>
@@ -739,36 +741,36 @@ export default function App() {
           <div style={{ marginTop: 4 }}><b>DATE ET LIEU DE NAISSANCE :</b> {eleve.naissance}{eleve.lieuNaissance ? ` à ${eleve.lieuNaissance}` : ""}</div>
         </div>
 
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, border: `1px solid ${C.text}` }}>
           <thead><tr>
             {["Matière", "Moy", "Coeff", "Moy Coeff", "Rang", "Appréciation"].map(h => (
-              <th key={h} style={{ background: C.ink, color: "#fff", padding: "7px 8px", textAlign: h === "Matière" || h === "Appréciation" ? "left" : "center", fontSize: 11, textTransform: "uppercase" }}>{h}</th>
+              <th key={h} style={{ background: C.ink, color: "#fff", padding: "7px 8px", textAlign: h === "Matière" || h === "Appréciation" ? "left" : "center", fontSize: 11, textTransform: "uppercase", border: `1px solid ${C.ink}` }}>{h}</th>
             ))}
           </tr></thead>
           <tbody>
             {matieres.map(m => {
               const n = noteOf(m.id);
               return (
-                <tr key={m.id} style={{ borderBottom: `1px solid ${C.line}` }}>
-                  <td style={{ padding: "6px 8px", fontWeight: 600 }}>{m.nom}</td>
-                  <td style={{ padding: "6px 8px", textAlign: "center" }}>
+                <tr key={m.id}>
+                  <td style={{ padding: "6px 8px", fontWeight: 600, border: `1px solid ${C.line}` }}>{m.nom}</td>
+                  <td style={{ padding: "6px 8px", textAlign: "center", border: `1px solid ${C.line}` }}>
                     <input type="number" min="0" max={config.bareme} step="0.5" value={n ?? ""} placeholder="—"
                       onChange={e => setNote(studentId, m.id, bulTrimestre, e.target.value)}
                       style={{ width: 50, textAlign: "center", padding: "3px 4px", borderRadius: 6, border: `1px solid ${C.line}`, fontSize: 12.5 }} />
                   </td>
-                  <td className="f-mono" style={{ padding: "6px 8px", textAlign: "center" }}>{m.coef}</td>
-                  <td className="f-mono" style={{ padding: "6px 8px", textAlign: "center" }}>{n != null ? (n * m.coef).toFixed(1).replace(/\.0$/, "") : "—"}</td>
-                  <td style={{ padding: "6px 8px", textAlign: "center" }}>{rangMatiere(m.id, bulTrimestre, studentId)}</td>
-                  <td style={{ padding: "6px 8px" }}>{mention(n)}</td>
+                  <td className="f-mono" style={{ padding: "6px 8px", textAlign: "center", border: `1px solid ${C.line}` }}>{m.coef}</td>
+                  <td className="f-mono" style={{ padding: "6px 8px", textAlign: "center", border: `1px solid ${C.line}` }}>{n != null ? (n * m.coef).toFixed(1).replace(/\.0$/, "") : "—"}</td>
+                  <td style={{ padding: "6px 8px", textAlign: "center", border: `1px solid ${C.line}` }}>{rangMatiere(m.id, bulTrimestre, studentId)}</td>
+                  <td style={{ padding: "6px 8px", border: `1px solid ${C.line}` }}>{mention(n)}</td>
                 </tr>
               );
             })}
             <tr style={{ background: C.ink, color: "#fff", fontWeight: 700 }}>
-              <td style={{ padding: "7px 8px" }}>TOTAL</td>
-              <td></td>
-              <td className="f-mono" style={{ padding: "7px 8px", textAlign: "center" }}>{sommeCoef}</td>
-              <td className="f-mono" style={{ padding: "7px 8px", textAlign: "center" }}>{sommePondere.toFixed(1).replace(/\.0$/, "")}</td>
-              <td></td><td></td>
+              <td style={{ padding: "7px 8px", border: `1px solid ${C.ink}` }}>TOTAL</td>
+              <td style={{ border: `1px solid ${C.ink}` }}></td>
+              <td className="f-mono" style={{ padding: "7px 8px", textAlign: "center", border: `1px solid ${C.ink}` }}>{sommeCoef}</td>
+              <td className="f-mono" style={{ padding: "7px 8px", textAlign: "center", border: `1px solid ${C.ink}` }}>{sommePondere.toFixed(1).replace(/\.0$/, "")}</td>
+              <td style={{ border: `1px solid ${C.ink}` }}></td><td style={{ border: `1px solid ${C.ink}` }}></td>
             </tr>
           </tbody>
         </table>
@@ -836,6 +838,10 @@ export default function App() {
             <div>
               <div style={{ fontSize: 11, color: C.textSoft, marginBottom: 4 }}>Téléphones</div>
               <Input value={config.etablissementTels} onChange={e => setConfig({ ...config, etablissementTels: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: C.textSoft, marginBottom: 4 }}>E-mail</div>
+              <Input value={config.etablissementEmail || ""} onChange={e => setConfig({ ...config, etablissementEmail: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
             </div>
             <div>
               <div style={{ fontSize: 11, color: C.textSoft, marginBottom: 4 }}>Année scolaire</div>
@@ -935,8 +941,8 @@ export default function App() {
     const recu = recuId ? paiements.find(p => p.id === recuId) : null;
     const totalG = students.filter(s => s.sexe === "M").length, totalF = students.filter(s => s.sexe === "F").length;
     const subtabs = [
-      ["effectifs", "Statistiques"], ["statut", "Statut par élève"], ["suivi", "Suivi par classe"], ["tranches", "Tranches"], ["paiement", "Paiement"],
-      ["stats", "Stats paiement"], ["historique", "Historique"], ["alertes", `Alertes (${alertes.length})`],
+      ["effectifs", "Statistiques"], ["suivi", "Suivi par classe"], ["redevables", "Liste des redevables"], ["tranches", "Tranches"], ["paiement", "Paiement"],
+      ["stats", "Stats paiement"],
       ["personnel", "Personnel / Paie"], ["depenses", "Dépenses"], ["rapport", "Rapport global"], ["parametres", "Paramètres"],
     ];
 
@@ -969,30 +975,11 @@ export default function App() {
           </Card>
         )}
 
-        {compTab === "statut" && (
-          <Card style={{ padding: 0, overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead><tr><Th>Élève</Th><Th>Classe</Th>{tranches.map(t => <Th key={t.id}>{t.nom}</Th>)}<Th>Payé</Th><Th>Reste</Th></tr></thead>
-              <tbody>{students.map(s => { const paid = studentPaid(s.id); const reste = totalTranches - paid;
-                return (
-                  <tr key={s.id}>
-                    <Td style={{ fontWeight: 600 }}>{s.prenoms} {s.nom}<div className="f-mono" style={{ fontWeight: 400, fontSize: 10.5, color: C.textSoft }}>Matricule : {s.matricule}</div></Td><Td>{classes.find(c => c.id === s.classeId)?.nom}</Td>
-                    {tranches.map(t => { const st = trancheStatus(s.id, t.id);
-                      return <Td key={t.id}><span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: st === "Payé" ? C.sageSoft : st === "Partiel" ? C.brassSoft : C.roseSoft, color: st === "Payé" ? C.sage : st === "Partiel" ? C.brass : C.rose }}>{st}</span></Td>;
-                    })}
-                    <Td className="f-mono">{fmt(paid)}</Td><Td className="f-mono" style={{ color: reste > 0 ? C.rose : C.sage }}>{fmt(reste)}</Td>
-                  </tr>
-                );
-              })}</tbody>
-            </table>
-          </Card>
-        )}
-
         {compTab === "suivi" && (() => {
           let liste = students.filter(s => s.classeId === suiviClasse);
           liste = [...liste].sort((a, b) => {
-            const va = suiviSort.champ === "reste" ? (totalTranches - studentPaid(a.id)) : suiviSort.champ === "paye" ? studentPaid(a.id) : a[suiviSort.champ];
-            const vb = suiviSort.champ === "reste" ? (totalTranches - studentPaid(b.id)) : suiviSort.champ === "paye" ? studentPaid(b.id) : b[suiviSort.champ];
+            const va = suiviSort.champ === "reste" ? studentReste(a) : suiviSort.champ === "paye" ? studentPaid(a.id) : a[suiviSort.champ];
+            const vb = suiviSort.champ === "reste" ? studentReste(b) : suiviSort.champ === "paye" ? studentPaid(b.id) : b[suiviSort.champ];
             return (typeof va === "number" ? va - vb : String(va).localeCompare(String(vb))) * suiviSort.dir;
           });
           const toggleSuiviSort = (champ) => setSuiviSort(s => s.champ === champ ? { champ, dir: -s.dir } : { champ, dir: 1 });
@@ -1006,24 +993,62 @@ export default function App() {
                 <div className="f-display" style={{ padding: 12, fontWeight: 700 }}>{config.etablissement} — {classes.find(c => c.id === suiviClasse)?.nom}</div>
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead><tr>
-                    <Th sortable onClick={() => toggleSuiviSort("nom")}>Élève</Th>
+                    <Th>N°</Th>
+                    <Th sortable onClick={() => toggleSuiviSort("nom")}>Prénoms et Nom</Th>
+                    <Th>Matricule</Th>
                     <Th sortable onClick={() => toggleSuiviSort("sexe")}>Sexe</Th>
                     <Th>Parent</Th><Th>Contact</Th>
-                    <Th sortable onClick={() => toggleSuiviSort("paye")}>Montant versé</Th>
-                    <Th sortable onClick={() => toggleSuiviSort("reste")}>Montant restant</Th>
+                    <Th sortable onClick={() => toggleSuiviSort("paye")}>Montant total payé</Th>
+                    <Th sortable onClick={() => toggleSuiviSort("reste")}>Montant total restant</Th>
+                    <Th>Observations</Th>
                   </tr></thead>
                   <tbody>
-                    {liste.map(s => { const paye = studentPaid(s.id); const reste = totalTranches - paye;
+                    {liste.map((s, i) => { const paye = studentPaid(s.id); const reste = studentReste(s); const fini = reste <= 0;
                       return (
                         <tr key={s.id}>
-                          <Td style={{ fontWeight: 600 }}>{s.prenoms} {s.nom}<div className="f-mono" style={{ fontWeight: 400, fontSize: 10.5, color: C.textSoft }}>Matricule : {s.matricule}</div></Td>
+                          <Td className="f-mono">{i + 1}</Td>
+                          <Td style={{ fontWeight: 600 }}>{s.prenoms} {s.nom}</Td>
+                          <Td className="f-mono">{s.matricule}</Td>
                           <Td>{s.sexe}</Td><Td>{s.parent}</Td><Td>{s.telephone}</Td>
                           <Td className="f-mono">{fmt(paye)}</Td>
-                          <Td className="f-mono" style={{ color: reste > 0 ? C.rose : C.sage }}>{fmt(reste)}</Td>
+                          <Td className="f-mono">{fmt(reste > 0 ? reste : 0)}</Td>
+                          <Td><Pill_ text={fini ? "Fini" : "En cours"} color={fini ? C.sage : C.rose} bg={fini ? C.sageSoft : C.roseSoft} /></Td>
                         </tr>
                       );
                     })}
-                    {!liste.length && <tr><Td style={{ textAlign: "center", color: C.textSoft }} colSpan={6}>Aucun élève dans cette classe.</Td></tr>}
+                    {!liste.length && <tr><Td style={{ textAlign: "center", color: C.textSoft }} colSpan={9}>Aucun élève dans cette classe.</Td></tr>}
+                  </tbody>
+                </table>
+              </Card>
+            </div>
+          );
+        })()}
+
+        {compTab === "redevables" && (() => {
+          const liste = students.filter(s => s.classeId === redevablesClasse && studentReste(s) > 0);
+          return (
+            <div>
+              <div className="no-print" style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+                <Select value={redevablesClasse} onChange={e => setRedevablesClasse(e.target.value)}>{classes.map(c => <option key={c.id} value={c.id}>{c.nom}</option>)}</Select>
+                <Btn kind="ghost" onClick={() => window.print()}><Printer size={13} /> Imprimer la liste</Btn>
+              </div>
+              <Card className="print-area" style={{ padding: 0, overflowX: "auto" }}>
+                <div className="f-display" style={{ padding: 12, fontWeight: 700 }}>{config.etablissement} — Liste des redevables — {classes.find(c => c.id === redevablesClasse)?.nom}</div>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead><tr>
+                    <Th>N°</Th><Th>Prénoms et Nom</Th><Th>Matricule</Th><Th>Sexe</Th><Th>Parent</Th><Th>Contact</Th><Th>Montant restant</Th>
+                  </tr></thead>
+                  <tbody>
+                    {liste.map((s, i) => (
+                      <tr key={s.id}>
+                        <Td className="f-mono">{i + 1}</Td>
+                        <Td style={{ fontWeight: 600 }}>{s.prenoms} {s.nom}</Td>
+                        <Td className="f-mono">{s.matricule}</Td>
+                        <Td>{s.sexe}</Td><Td>{s.parent}</Td><Td>{s.telephone}</Td>
+                        <Td className="f-mono" style={{ color: C.rose, fontWeight: 700 }}>{fmt(studentReste(s))}</Td>
+                      </tr>
+                    ))}
+                    {!liste.length && <tr><Td style={{ textAlign: "center", color: C.textSoft }} colSpan={7}>Aucun redevable dans cette classe — tous les paiements sont à jour.</Td></tr>}
                   </tbody>
                 </table>
               </Card>
@@ -1032,34 +1057,55 @@ export default function App() {
         })()}
 
         {compTab === "tranches" && (
-          <Card>
-            <Btn onClick={() => setTrancheForm({ nom: "", montant: "", limite: "" })} style={{ marginBottom: 10 }}><Plus size={13} /> Nouvelle tranche</Btn>
-            {trancheForm && (
-              <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
-                <Input placeholder="Nom (ex: 1ère Tranche)" value={trancheForm.nom} onChange={e => setTrancheForm({ ...trancheForm, nom: e.target.value })} />
-                <Input type="number" placeholder="Montant" value={trancheForm.montant} onChange={e => setTrancheForm({ ...trancheForm, montant: e.target.value })} />
-                <Input type="date" value={trancheForm.limite} onChange={e => setTrancheForm({ ...trancheForm, limite: e.target.value })} />
-                <Btn onClick={saveTranche}><Check size={13} /></Btn>
-                <Btn kind="ghost" onClick={() => setTrancheForm(null)}><X size={13} /></Btn>
-              </div>
-            )}
-            {tranches.map(t => (
-              <div key={t.id} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderTop: `1px solid ${C.line}` }}>
-                <div><b>{t.nom}</b> — {fmt(t.montant)} <span style={{ color: C.textSoft, fontSize: 11 }}>· échéance {t.limite}</span></div>
-                <div style={{ display: "flex", gap: 6 }}>
-                  <button onClick={() => setTrancheForm(t)} style={{ background: "none", border: "none", cursor: "pointer" }}><Pencil size={14} color={C.textSoft} /></button>
-                  <button onClick={() => deleteTranche(t.id)} style={{ background: "none", border: "none", cursor: "pointer" }}><Trash2 size={14} color={C.rose} /></button>
+          <div>
+            <Card>
+              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>Montant annuel par classe</div>
+              <div style={{ fontSize: 11, color: C.textSoft, marginBottom: 10 }}>Chaque classe a un montant total dû pour l'année, identique pour tous ses élèves.</div>
+              {classes.map(c => (
+                <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderTop: `1px solid ${C.line}` }}>
+                  <div style={{ flex: 1, fontWeight: 600 }}>{c.nom}</div>
+                  <Input type="number" min="0" value={c.montantAnnuel || 0} onChange={e => setMontantAnnuelClasse(c.id, Number(e.target.value) || 0)} style={{ width: 160 }} />
+                  <span style={{ fontSize: 11, color: C.textSoft }}>{config.devise}</span>
                 </div>
-              </div>
-            ))}
-          </Card>
+              ))}
+            </Card>
+
+            <Card>
+              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>Tranches (échéances)</div>
+              <div style={{ fontSize: 11, color: C.textSoft, marginBottom: 10 }}>Les tranches servent à repérer à quel versement correspond un paiement — elles n'ont pas de montant propre.</div>
+              <Btn onClick={() => setTrancheForm({ nom: "", limite: "" })} style={{ marginBottom: 10 }}><Plus size={13} /> Nouvelle tranche</Btn>
+              {trancheForm && (
+                <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+                  <Input placeholder="Nom (ex: 1ère Tranche)" value={trancheForm.nom} onChange={e => setTrancheForm({ ...trancheForm, nom: e.target.value })} />
+                  <Input type="date" value={trancheForm.limite || ""} onChange={e => setTrancheForm({ ...trancheForm, limite: e.target.value })} />
+                  <Btn onClick={saveTranche}><Check size={13} /></Btn>
+                  <Btn kind="ghost" onClick={() => setTrancheForm(null)}><X size={13} /></Btn>
+                </div>
+              )}
+              {tranches.map(t => (
+                <div key={t.id} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderTop: `1px solid ${C.line}` }}>
+                  <div><b>{t.nom}</b>{t.limite && <span style={{ color: C.textSoft, fontSize: 11 }}> · échéance {t.limite}</span>}</div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button onClick={() => setTrancheForm(t)} style={{ background: "none", border: "none", cursor: "pointer" }}><Pencil size={14} color={C.textSoft} /></button>
+                    <button onClick={() => deleteTranche(t.id)} style={{ background: "none", border: "none", cursor: "pointer" }}><Trash2 size={14} color={C.rose} /></button>
+                  </div>
+                </div>
+              ))}
+            </Card>
+          </div>
         )}
 
         {compTab === "paiement" && (
           <Card>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
-              <Select value={paieForm.studentId} onChange={e => setPaieForm({ ...paieForm, studentId: e.target.value })}><option value="">Élève…</option>{students.map(s => <option key={s.id} value={s.id}>{nomMat(s)}</option>)}</Select>
-              <Select value={paieForm.trancheId} onChange={e => setPaieForm({ ...paieForm, trancheId: e.target.value })}><option value="">Tranche…</option>{tranches.map(t => <option key={t.id} value={t.id}>{t.nom} ({fmt(t.montant)})</option>)}</Select>
+              <Select value={paieClasseFiltre} onChange={e => { setPaieClasseFiltre(e.target.value); setPaieForm({ ...paieForm, studentId: "" }); }}>
+                <option value="">Classe…</option>{classes.map(c => <option key={c.id} value={c.id}>{c.nom}</option>)}
+              </Select>
+              <Select value={paieForm.studentId} onChange={e => setPaieForm({ ...paieForm, studentId: e.target.value })} disabled={!paieClasseFiltre}>
+                <option value="">{paieClasseFiltre ? "Élève…" : "Choisissez d'abord une classe"}</option>
+                {students.filter(s => s.classeId === paieClasseFiltre).map(s => <option key={s.id} value={s.id}>{nomMat(s)}</option>)}
+              </Select>
+              <Select value={paieForm.trancheId} onChange={e => setPaieForm({ ...paieForm, trancheId: e.target.value })}><option value="">Tranche…</option>{tranches.map(t => <option key={t.id} value={t.id}>{t.nom}</option>)}</Select>
               <Input type="number" placeholder="Montant versé" value={paieForm.montant} onChange={e => setPaieForm({ ...paieForm, montant: e.target.value })} />
               <Select value={paieForm.mode} onChange={e => setPaieForm({ ...paieForm, mode: e.target.value })}><option>Espèces</option><option>Mobile Money</option><option>Virement</option><option>Chèque</option></Select>
             </div>
@@ -1067,29 +1113,67 @@ export default function App() {
 
             {recu && (() => {
               const el = students.find(s => s.id === recu.studentId);
+              const classeEl = classes.find(c => c.id === el?.classeId);
               const paye = studentPaid(recu.studentId);
-              const reste = totalTranches - paye;
+              const attendu = studentAttendu(el);
+              const reste = studentReste(el);
+              const numero = paiements.findIndex(p => p.id === recu.id) + 1;
+              const dateHeure = `${new Date().toLocaleDateString("fr-FR")} ${new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`;
+              const Section = ({ title }) => (
+                <div style={{ background: C.ink, color: "#fff", textAlign: "center", fontWeight: 700, fontSize: 11.5, padding: "6px 0", textTransform: "uppercase", marginTop: 14 }}>{title}</div>
+              );
+              const Row = ({ label, value, bold }) => (
+                <tr>
+                  <Td style={{ color: C.textSoft, border: "none", padding: "5px 10px", width: "50%" }}>{label}</Td>
+                  <Td className="f-mono" style={{ border: "none", padding: "5px 10px", textAlign: "center", fontWeight: bold ? 700 : 500 }}>{value}</Td>
+                </tr>
+              );
               return (
-                <div className="print-area" style={{ marginTop: 16, border: `1px dashed ${C.brass}`, borderRadius: 10, padding: 20 }}>
-                  {config.logo && <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}><img src={config.logo} alt="Logo" style={{ width: 54, height: 54, borderRadius: "50%", objectFit: "cover", border: `2px solid ${C.brass}` }} /></div>}
-                  <div className="f-display" style={{ textAlign: "center", fontWeight: 700, fontSize: 16, marginBottom: 2 }}>{config.etablissement}</div>
-                  <div style={{ textAlign: "center", fontSize: 11, color: C.textSoft, marginBottom: 14 }}>REÇU DE PAIEMENT</div>
-                  <table style={{ width: "100%", fontSize: 13, lineHeight: 2 }}><tbody>
-                    <tr><Td style={{ color: C.textSoft, border: "none", padding: "3px 0" }}>Prénoms et Nom</Td><Td style={{ fontWeight: 700, border: "none", padding: "3px 0" }}>{el?.prenoms} {el?.nom}</Td></tr>
-                    <tr><Td style={{ color: C.textSoft, border: "none", padding: "3px 0" }}>Matricule</Td><Td className="f-mono" style={{ border: "none", padding: "3px 0" }}>{el?.matricule}</Td></tr>
-                    <tr><Td style={{ color: C.textSoft, border: "none", padding: "3px 0" }}>Date de naissance</Td><Td style={{ border: "none", padding: "3px 0" }}>{el?.naissance}</Td></tr>
-                    <tr><Td style={{ color: C.textSoft, border: "none", padding: "3px 0" }}>Parent responsable</Td><Td style={{ border: "none", padding: "3px 0" }}>{el?.parent}</Td></tr>
-                    <tr><Td style={{ color: C.textSoft, border: "none", padding: "3px 0" }}>Classe</Td><Td style={{ border: "none", padding: "3px 0" }}>{classes.find(c => c.id === el?.classeId)?.nom}</Td></tr>
-                  </tbody></table>
-                  <div style={{ borderTop: `1px solid ${C.line}`, margin: "10px 0", paddingTop: 10, fontSize: 12, color: C.textSoft }}>
-                    Versement de ce jour : <b style={{ color: C.text }}>{fmt(recu.montant)}</b> ({recu.mode}) — {tranches.find(t => t.id === recu.trancheId)?.nom}
+                <div className="print-area" style={{ marginTop: 16, border: `1px solid ${C.line}`, borderRadius: 10, padding: 22 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
+                    <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                      <div style={{ width: 56, height: 56, borderRadius: "50%", border: `2px solid ${C.brass}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0 }}>
+                        {config.logo ? <img src={config.logo} alt="Logo" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <GraduationCap size={24} color={C.brass} />}
+                      </div>
+                      <div style={{ fontSize: 11.5, lineHeight: 1.6 }}>
+                        <div className="f-display" style={{ fontWeight: 700, fontSize: 18, marginBottom: 2 }}>{config.etablissement}</div>
+                        {config.etablissementAdresse && <div>{config.etablissementAdresse}</div>}
+                        {config.etablissementTels && <div>{config.etablissementTels}</div>}
+                        {config.etablissementEmail && <div>{config.etablissementEmail}</div>}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div className="f-display" style={{ fontWeight: 700, fontSize: 15, textTransform: "uppercase" }}>Reçu de paiement</div>
+                      <div className="f-mono" style={{ fontSize: 20, fontWeight: 700, color: C.brass }}>{numero}</div>
+                    </div>
                   </div>
-                  <table style={{ width: "100%", fontSize: 14, lineHeight: 2, marginTop: 6 }}><tbody>
-                    <tr><Td style={{ fontWeight: 700, border: "none", padding: "3px 0" }}>Montant Total payé</Td><Td className="f-mono" style={{ fontWeight: 700, color: C.sage, border: "none", padding: "3px 0" }}>{fmt(paye)}</Td></tr>
-                    <tr><Td style={{ fontWeight: 700, border: "none", padding: "3px 0" }}>Montant Total restant</Td><Td className="f-mono" style={{ fontWeight: 700, color: reste > 0 ? C.rose : C.sage, border: "none", padding: "3px 0" }}>{fmt(reste)}</Td></tr>
+                  <div style={{ textAlign: "center", fontSize: 12, color: C.textSoft, marginTop: 10 }}>DATE : {dateHeure}</div>
+
+                  <Section title="Informations élève" />
+                  <table style={{ width: "100%", fontSize: 13 }}><tbody>
+                    <Row label="Nom et Prénoms" value={`${el?.nom} ${el?.prenoms}`} bold />
+                    <Row label="Matricule" value={el?.matricule} />
+                    <Row label="Statut" value={el?.statut || "Nouveau"} />
                   </tbody></table>
-                  <div style={{ textAlign: "right", fontSize: 11, color: C.textSoft, marginTop: 14 }}>Date d'impression : {new Date().toLocaleDateString("fr-FR")}</div>
-                  <Btn kind="ghost" className="no-print" onClick={() => window.print()} style={{ marginTop: 12 }}><Printer size={13} /> Imprimer le reçu</Btn>
+
+                  <Section title="Informations scolaire" />
+                  <table style={{ width: "100%", fontSize: 13 }}><tbody>
+                    <Row label="Cycle" value={classeEl?.cycle || "—"} />
+                    <Row label="Classe" value={classeEl?.nom} />
+                    <Row label="Libellé classe" value={classeEl?.nom} />
+                    <Row label="Année scolaire" value={config.anneeScolaire} />
+                  </tbody></table>
+
+                  <Section title="Informations paiement" />
+                  <table style={{ width: "100%", fontSize: 13 }}><tbody>
+                    <Row label="Libellé paiement" value={tranches.find(t => t.id === recu.trancheId)?.nom} />
+                    <Row label="Montant à payer" value={fmt(attendu)} />
+                    <Row label="Montant payé" value={fmt(paye)} bold />
+                    <Row label="Date de paiement" value={recu.date} />
+                    <Row label="Reste à payer" value={reste > 0 ? fmt(reste) : "—"} bold />
+                  </tbody></table>
+
+                  <Btn kind="ghost" className="no-print" onClick={() => window.print()} style={{ marginTop: 16 }}><Printer size={13} /> Imprimer le reçu</Btn>
                 </div>
               );
             })()}
@@ -1099,8 +1183,8 @@ export default function App() {
         {compTab === "stats" && (
           <Card style={{ padding: 0, overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead><tr><Th>Classe</Th><Th>Attendu</Th><Th>Perçu</Th><Th>Taux</Th></tr></thead>
-              <tbody>{classes.map(c => { const n = classStats(c.id).total; const attendu = n * totalTranches;
+              <thead><tr><Th>Classe</Th><Th>Montant attendu</Th><Th>Montant Perçu</Th><Th>Taux</Th></tr></thead>
+              <tbody>{classes.map(c => { const n = classStats(c.id).total; const attendu = n * Number(c.montantAnnuel || 0);
                 const percu = students.filter(s => s.classeId === c.id).reduce((s, st) => s + studentPaid(st.id), 0);
                 const taux = attendu ? Math.round(percu / attendu * 100) : 0;
                 return <tr key={c.id}><Td style={{ fontWeight: 600 }}>{c.nom}</Td><Td className="f-mono">{fmt(attendu)}</Td><Td className="f-mono">{fmt(percu)}</Td><Td style={{ color: taux >= 80 ? C.sage : taux >= 40 ? C.brass : C.rose, fontWeight: 700 }}>{taux}%</Td></tr>;
@@ -1109,53 +1193,51 @@ export default function App() {
           </Card>
         )}
 
-        {compTab === "historique" && (
-          <Card style={{ padding: 0, overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead><tr><Th>Date</Th><Th>Élève</Th><Th>Tranche</Th><Th>Montant</Th><Th>Mode</Th></tr></thead>
-              <tbody>{[...paiements].sort((a, b) => b.date.localeCompare(a.date)).map(p => (
-                <tr key={p.id}><Td>{p.date}</Td><Td>{nomMat(students.find(s => s.id === p.studentId))}</Td><Td>{tranches.find(t => t.id === p.trancheId)?.nom}</Td><Td className="f-mono">{fmt(p.montant)}</Td><Td>{p.mode}</Td></tr>
-              ))}</tbody>
-            </table>
-          </Card>
-        )}
-
-        {compTab === "alertes" && (
-          <div>{alertes.length === 0 ? <Card>Aucune alerte : tous les paiements en retard sont à jour.</Card> :
-            alertes.map((a, i) => (
-              <Card key={i} style={{ display: "flex", alignItems: "center", gap: 10, borderColor: C.rose }}>
-                <AlertTriangle color={C.rose} size={18} />
-                <div><b>{a.student.prenoms} {a.student.nom}</b> <span className="f-mono" style={{ fontSize: 11 }}>(Matricule : {a.student.matricule})</span> — {a.tranche.nom} en retard <span style={{ color: C.textSoft, fontSize: 11 }}>(échéance {a.tranche.limite})</span></div>
-              </Card>
-            ))}
-          </div>
-        )}
-
         {compTab === "personnel" && (
-          <Card>
-            <Btn onClick={() => setStaffForm({ nom: "", poste: "", salaire: "" })} style={{ marginBottom: 10 }}><Plus size={13} /> Ajouter un employé</Btn>
-            {staffForm && (
-              <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
-                <Input placeholder="Nom" value={staffForm.nom} onChange={e => setStaffForm({ ...staffForm, nom: e.target.value })} />
-                <Input placeholder="Poste" value={staffForm.poste} onChange={e => setStaffForm({ ...staffForm, poste: e.target.value })} />
-                <Input type="number" placeholder="Salaire mensuel" value={staffForm.salaire} onChange={e => setStaffForm({ ...staffForm, salaire: e.target.value })} />
-                <Btn onClick={saveStaff}><Check size={13} /></Btn><Btn kind="ghost" onClick={() => setStaffForm(null)}><X size={13} /></Btn>
+          <Card style={{ padding: 0, overflowX: "auto" }}>
+            <div style={{ padding: 16 }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
+                <Btn onClick={() => setStaffForm({ nom: "", poste: "", salaire: "" })}><Plus size={13} /> Ajouter un employé</Btn>
+                <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: 12, color: C.textSoft }}>Année :</span>
+                  <Input type="number" value={paieAnnee} onChange={e => setPaieAnnee(Number(e.target.value) || paieAnnee)} style={{ width: 90 }} />
+                </div>
               </div>
-            )}
+              {staffForm && (
+                <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+                  <Input placeholder="Nom" value={staffForm.nom} onChange={e => setStaffForm({ ...staffForm, nom: e.target.value })} />
+                  <Input placeholder="Poste" value={staffForm.poste} onChange={e => setStaffForm({ ...staffForm, poste: e.target.value })} />
+                  <Input type="number" placeholder="Salaire mensuel" value={staffForm.salaire} onChange={e => setStaffForm({ ...staffForm, salaire: e.target.value })} />
+                  <Btn onClick={saveStaff}><Check size={13} /></Btn><Btn kind="ghost" onClick={() => setStaffForm(null)}><X size={13} /></Btn>
+                </div>
+              )}
+            </div>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead><tr><Th>Nom</Th><Th>Poste</Th><Th>Salaire</Th><Th>Ce mois</Th><Th>Actions</Th></tr></thead>
-              <tbody>{staff.map(s => { const paye = dejaPayeCeMois(s.id);
-                return (
-                  <tr key={s.id}>
-                    <Td style={{ fontWeight: 600 }}>{s.nom}</Td><Td>{s.poste}</Td><Td className="f-mono">{fmt(s.salaire)}</Td>
-                    <Td>{paye ? <Pill_ text="Payé" color={C.sage} bg={C.sageSoft} /> : <Btn kind="brass" onClick={() => payerStaff(s)}>Payer</Btn>}</Td>
-                    <Td><div style={{ display: "flex", gap: 4 }}>
-                      <button onClick={() => setStaffForm(s)} style={{ background: "none", border: "none", cursor: "pointer" }}><Pencil size={14} color={C.textSoft} /></button>
-                      <button onClick={() => deleteStaff(s.id)} style={{ background: "none", border: "none", cursor: "pointer" }}><Trash2 size={14} color={C.rose} /></button>
-                    </div></Td>
-                  </tr>
-                );
-              })}</tbody>
+              <thead><tr>
+                <Th>Nom</Th><Th>Poste</Th><Th>Salaire</Th>
+                {MOIS.map(m => <Th key={m}>{m.slice(0, 3)}</Th>)}
+                <Th>Actions</Th>
+              </tr></thead>
+              <tbody>{staff.map(s => (
+                <tr key={s.id}>
+                  <Td style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{s.nom}</Td><Td>{s.poste}</Td><Td className="f-mono">{fmt(s.salaire)}</Td>
+                  {MOIS.map(m => {
+                    const label = `${m} ${paieAnnee}`;
+                    const paye = dejaPayeMois(s.id, label);
+                    return (
+                      <Td key={m} style={{ textAlign: "center" }}>
+                        {paye
+                          ? <Check size={15} color={C.sage} style={{ verticalAlign: "middle" }} />
+                          : <button onClick={() => payerMois(s, label)} title={`Marquer ${label} payé`} style={{ background: C.brassSoft, color: C.brass, border: "none", borderRadius: 6, padding: "2px 6px", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>Payer</button>}
+                      </Td>
+                    );
+                  })}
+                  <Td><div style={{ display: "flex", gap: 4 }}>
+                    <button onClick={() => setStaffForm(s)} style={{ background: "none", border: "none", cursor: "pointer" }}><Pencil size={14} color={C.textSoft} /></button>
+                    <button onClick={() => deleteStaff(s.id)} style={{ background: "none", border: "none", cursor: "pointer" }}><Trash2 size={14} color={C.rose} /></button>
+                  </div></Td>
+                </tr>
+              ))}</tbody>
             </table>
           </Card>
         )}
@@ -1240,8 +1322,8 @@ export default function App() {
             </Card>
             <Card>
               <div style={{ fontWeight: 700, marginBottom: 4 }}>Taux de recouvrement global</div>
-              <div className="f-mono" style={{ fontSize: 16 }}>{totalTranches * students.length ? Math.round(totalEntrees / (totalTranches * students.length) * 100) : 0}%</div>
-              <div style={{ fontSize: 12, color: C.textSoft, marginTop: 4 }}>Alertes de paiement en cours : <b style={{ color: alertes.length ? C.rose : C.sage }}>{alertes.length}</b></div>
+              <div className="f-mono" style={{ fontSize: 16 }}>{(() => { const attenduTotal = students.reduce((s, st) => s + studentAttendu(st), 0); return attenduTotal ? Math.round(totalEntrees / attenduTotal * 100) : 0; })()}%</div>
+              <div style={{ fontSize: 12, color: C.textSoft, marginTop: 4 }}>Élèves redevables (paiement en cours) : <b style={{ color: C.rose }}>{students.filter(s => studentReste(s) > 0).length}</b></div>
             </Card>
           </div>
         )}
