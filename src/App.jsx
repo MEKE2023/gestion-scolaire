@@ -137,6 +137,7 @@ export default function App() {
   const [notes, setNotes] = useState(initNotes());
   const [materiels, setMateriels] = useState(initMateriels());
   const [archives, setArchives] = useState({});
+  const [conduites, setConduites] = useState([]);
 
   /* ---- Paramètres généraux (devise, bulletin, mot de passe comptabilité) ---- */
   const [config, setConfig] = useState({ devise: "GNF", etablissement: "GROUPE SCOLAIRE PRIVÉ CARMEL", etablissementAdresse: "", etablissementTels: "", etablissementEmail: "", ire: "", dpe: "", anneeScolaire: "2026-2027", bareme: 20, comptaPassword: "compta2026", logo: null });
@@ -173,6 +174,7 @@ export default function App() {
         setNotes(d.notes || initNotes());
         setMateriels(d.materiels || initMateriels());
         setArchives(d.archives || {});
+        setConduites(d.conduites || []);
         {
           const loadedConfig = d.config || { devise: "GNF", etablissement: "GROUPE SCOLAIRE PRIVÉ CARMEL", etablissementAdresse: "", etablissementTels: "", etablissementEmail: "", ire: "", dpe: "", anneeScolaire: "2026-2027", bareme: 20, comptaPassword: "compta2026", logo: null };
           setConfig({
@@ -187,7 +189,7 @@ export default function App() {
           data: {
             classes: initClasses(), students: initStudents(), tranches: initTranches(), paiements: initPaiements(),
             staff: initStaff(), paieHist: initPaieHist(), depenses: initDepenses(), matieresConfig: initMatieres(),
-            notes: initNotes(), materiels: initMateriels(), archives: {}, config: { devise: "GNF", etablissement: "GROUPE SCOLAIRE PRIVÉ CARMEL", etablissementAdresse: "", etablissementTels: "", etablissementEmail: "", ire: "", dpe: "", anneeScolaire: "2026-2027", bareme: 20, comptaPassword: "compta2026", logo: null },
+            notes: initNotes(), materiels: initMateriels(), archives: {}, conduites: [], config: { devise: "GNF", etablissement: "GROUPE SCOLAIRE PRIVÉ CARMEL", etablissementAdresse: "", etablissementTels: "", etablissementEmail: "", ire: "", dpe: "", anneeScolaire: "2026-2027", bareme: 20, comptaPassword: "compta2026", logo: null },
             periodes: ["Trimestre 1", "Trimestre 2", "Trimestre 3"],
           },
         });
@@ -201,12 +203,12 @@ export default function App() {
     const t = setTimeout(() => {
       supabase.from("app_state").upsert({
         id: "main",
-        data: { classes, students, tranches, paiements, staff, paieHist, depenses, matieresConfig, notes, materiels, archives, config, periodes },
+        data: { classes, students, tranches, paiements, staff, paieHist, depenses, matieresConfig, notes, materiels, archives, conduites, config, periodes },
         updated_at: new Date().toISOString(),
       }).then();
     }, 800);
     return () => clearTimeout(t);
-  }, [classes, students, tranches, paiements, staff, paieHist, depenses, matieresConfig, notes, materiels, archives, config, periodes, session, dataLoaded]);
+  }, [classes, students, tranches, paiements, staff, paieHist, depenses, matieresConfig, notes, materiels, archives, conduites, config, periodes, session, dataLoaded]);
 
   const [comptaAuthed, setComptaAuthed] = useState(false);
   const [comptaPwd, setComptaPwd] = useState(""); const [comptaErr, setComptaErr] = useState(false);
@@ -247,6 +249,7 @@ export default function App() {
   const [suiviClasse, setSuiviClasse] = useState("cl1");
   const [suiviSort, setSuiviSort] = useState({ champ: "nom", dir: 1 });
   const [redevablesClasse, setRedevablesClasse] = useState("cl1");
+  const [anneeEnAttente, setAnneeEnAttente] = useState(null);
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -279,15 +282,9 @@ export default function App() {
   const addClasse = () => { if (!nouvelleClasse.trim()) return; setClasses(prev => [...prev, { id: uid("cl"), nom: nouvelleClasse.trim(), montantAnnuel: 0 }]); setNouvelleClasse(""); };
   const renameClasse = (id, nom) => setClasses(prev => prev.map(c => c.id === id ? { ...c, nom } : c));
   const setMontantAnnuelClasse = (id, montant) => setClasses(prev => prev.map(c => c.id === id ? { ...c, montantAnnuel: montant } : c));
-  const changerAnneeScolaire = (nouvelle) => {
-    if (!nouvelle || nouvelle === config.anneeScolaire) return;
-    const dejaArchivee = !!archives[nouvelle];
-    const ok = window.confirm(
-      dejaArchivee
-        ? `Revenir sur l'année scolaire ${nouvelle} ? Les données de ${config.anneeScolaire} seront mises de côté et celles de ${nouvelle} seront restaurées.`
-        : `Passer à l'année scolaire ${nouvelle} ?\n\nLes données de ${config.anneeScolaire} (notes, paiements, salaires, dépenses) seront archivées — vous pourrez les revoir en revenant sur cette année plus tard.\nLa liste des élèves et des classes reste commune à toutes les années.`
-    );
-    if (!ok) return;
+  const appliquerChangementAnnee = () => {
+    const nouvelle = anneeEnAttente;
+    if (!nouvelle || nouvelle === config.anneeScolaire) { setAnneeEnAttente(null); return; }
     const anneeQuittee = config.anneeScolaire;
     const donneesCibles = archives[nouvelle] || { notes: [], paiements: [], paieHist: [], depenses: [] };
     setArchives(prev => ({ ...prev, [anneeQuittee]: { notes, paiements, paieHist, depenses } }));
@@ -296,6 +293,7 @@ export default function App() {
     setPaieHist(donneesCibles.paieHist || []);
     setDepenses(donneesCibles.depenses || []);
     setConfig(prev => ({ ...prev, anneeScolaire: nouvelle }));
+    setAnneeEnAttente(null);
   };
   const deleteClasse = (id) => { setClasses(prev => prev.filter(c => c.id !== id)); if (classeSelectionnee === id) setClasseSelectionnee(null); };
   const addPeriode = () => { if (!nouvellePeriode.trim()) return; setPeriodes(prev => [...prev, nouvellePeriode.trim()]); setNouvellePeriode(""); };
@@ -321,19 +319,35 @@ export default function App() {
       return [...prev, { id: uid("n"), studentId, matiereId, trimestre, note: val }];
     });
   };
+  const getConduite = (studentId, trimestre) => conduites.find(c => c.studentId === studentId && c.trimestre === trimestre)?.texte || "";
+  const setConduiteTexte = (studentId, trimestre, texte) => {
+    setConduites(prev => {
+      const existing = prev.find(c => c.studentId === studentId && c.trimestre === trimestre);
+      if (existing) return prev.map(c => c === existing ? { ...c, texte } : c);
+      return [...prev, { id: uid("cd"), studentId, trimestre, texte }];
+    });
+  };
+  const noteDe = (studentId, matiereId, trimestre) => {
+    if (trimestre === "ANNUEL") {
+      const vals = periodes.map(per => notes.find(n => n.studentId === studentId && n.matiereId === matiereId && n.trimestre === per)?.note).filter(v => v != null);
+      return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+    }
+    return notes.find(n => n.studentId === studentId && n.matiereId === matiereId && n.trimestre === trimestre)?.note ?? null;
+  };
   const rangMatiere = (matiereId, trimestre, studentId) => {
     const classeId = students.find(s => s.id === studentId)?.classeId;
-    const notesClasse = notes.filter(n => n.matiereId === matiereId && n.trimestre === trimestre && n.note != null && students.find(s => s.id === n.studentId)?.classeId === classeId);
-    const noteEleve = notesClasse.find(n => n.studentId === studentId)?.note;
-    if (noteEleve == null) return "—";
-    const meilleurs = notesClasse.filter(n => n.note > noteEleve).length;
+    const eleves = students.filter(s => s.classeId === classeId);
+    const valeurs = eleves.map(s => ({ id: s.id, v: noteDe(s.id, matiereId, trimestre) })).filter(x => x.v != null);
+    const mine = valeurs.find(x => x.id === studentId)?.v;
+    if (mine == null) return "—";
+    const meilleurs = valeurs.filter(x => x.v > mine).length;
     return `${meilleurs + 1}${meilleurs === 0 ? "er" : "e"}`;
   };
   const moyenneEleve = (studentId, classeId, trimestre) => {
     const mats = matieresConfig[classeId] || [];
     let sc = 0, sp = 0;
     mats.forEach(m => {
-      const n = notes.find(x => x.studentId === studentId && x.matiereId === m.id && x.trimestre === trimestre)?.note;
+      const n = noteDe(studentId, m.id, trimestre);
       if (n != null) { sc += Number(m.coef); sp += n * Number(m.coef); }
     });
     return sc ? sp / sc : null;
@@ -349,6 +363,10 @@ export default function App() {
     if (moy == null) return "—";
     const meilleurs = classement.filter(x => x.moyenne > moy).length;
     return `${meilleurs + 1}${meilleurs === 0 ? "er" : "e"} / ${classement.length}`;
+  };
+  const appreciationGenerale = (moy) => {
+    if (moy == null) return "—";
+    return moy >= 16 ? "Très Bien" : moy >= 14 ? "Bien" : moy >= 12 ? "Assez Bien" : moy >= 10 ? "Passable" : "Insuffisant";
   };
 
   /* ---------- Actions Comptabilité / Finance ---------- */
@@ -566,9 +584,27 @@ export default function App() {
         <Card>
           <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>Année scolaire</div>
           <div style={{ fontSize: 11, color: C.textSoft, marginBottom: 10 }}>Chaque année scolaire garde ses propres notes, paiements, salaires et dépenses. Vous pouvez revenir sur une année passée à tout moment pour la revoir.</div>
-          <Select value={config.anneeScolaire} onChange={e => changerAnneeScolaire(e.target.value)}>
+          <Select value={anneeEnAttente || config.anneeScolaire} onChange={e => setAnneeEnAttente(e.target.value)}>
             {ANNEES_SCOLAIRES.map(a => <option key={a} value={a}>{a}</option>)}
           </Select>
+
+          {anneeEnAttente && anneeEnAttente !== config.anneeScolaire && (
+            <div style={{ marginTop: 12, padding: 12, background: C.brassSoft, borderRadius: 8 }}>
+              <div style={{ fontSize: 12.5, color: C.text, marginBottom: 8 }}>
+                {archives[anneeEnAttente]
+                  ? <>Revenir sur <b>{anneeEnAttente}</b> ? Les données de <b>{config.anneeScolaire}</b> seront mises de côté et celles de <b>{anneeEnAttente}</b> restaurées.</>
+                  : <>Passer à <b>{anneeEnAttente}</b> ? Les données de <b>{config.anneeScolaire}</b> (notes, paiements, salaires, dépenses) seront archivées. Les élèves et les classes restent inchangés.</>}
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <Btn onClick={appliquerChangementAnnee}><Check size={13} /> Confirmer le passage à {anneeEnAttente}</Btn>
+                <Btn kind="ghost" onClick={() => setAnneeEnAttente(null)}><X size={13} /> Annuler</Btn>
+              </div>
+            </div>
+          )}
+
+          <div style={{ marginTop: 12, padding: 10, background: C.paper, borderRadius: 8, fontSize: 11.5, color: C.textSoft }}>
+            Contenu actuel de <b style={{ color: C.text }}>{config.anneeScolaire}</b> : {notes.length} note(s) · {paiements.length} paiement(s) · {paieHist.length} salaire(s) versé(s) · {depenses.length} dépense(s)
+          </div>
         </Card>
         <Card>
           <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
@@ -632,25 +668,29 @@ export default function App() {
           <Card><div style={{ fontSize: 12, color: C.textSoft }}>Aucune matière configurée pour cette classe. Rendez-vous dans le menu <b>Bulletin</b> pour ajouter les matières et coefficients de cette classe.</div></Card>
         ) : (
           <Card style={{ padding: 0, overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, border: `1px solid ${C.text}` }}>
               <thead><tr>
-                <Th>Élève</Th>
-                {matieres.map(m => <Th key={m.id}>{m.nom} <span style={{ fontWeight: 400 }}>(coef {m.coef})</span></Th>)}
+                <th style={{ background: C.ink, color: "#fff", padding: "8px 10px", textAlign: "left", fontSize: 11, textTransform: "uppercase", border: `1px solid ${C.ink}` }}>Élève</th>
+                {matieres.map(m => (
+                  <th key={m.id} style={{ background: C.ink, color: "#fff", padding: "8px 10px", textAlign: "center", fontSize: 11, textTransform: "uppercase", border: `1px solid ${C.ink}` }}>
+                    {m.nom}<div style={{ fontWeight: 400, fontSize: 9.5, opacity: 0.85, textTransform: "none" }}>coef {m.coef}</div>
+                  </th>
+                ))}
               </tr></thead>
               <tbody>
-                {eleves.map(s => (
-                  <tr key={s.id}>
-                    <Td style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{s.prenoms} {s.nom}<div className="f-mono" style={{ fontWeight: 400, fontSize: 10.5, color: C.textSoft }}>Matricule : {s.matricule}</div></Td>
+                {eleves.map((s, i) => (
+                  <tr key={s.id} style={{ background: i % 2 ? C.paper : "#fff" }}>
+                    <td style={{ padding: "7px 10px", fontWeight: 600, whiteSpace: "nowrap", border: `1px solid ${C.line}` }}>{s.prenoms} {s.nom}<div className="f-mono" style={{ fontWeight: 400, fontSize: 10.5, color: C.textSoft }}>Matricule : {s.matricule}</div></td>
                     {matieres.map(m => (
-                      <Td key={m.id}>
+                      <td key={m.id} style={{ padding: "6px 10px", textAlign: "center", border: `1px solid ${C.line}` }}>
                         <input type="number" min="0" max={config.bareme} step="0.5" value={noteOf(s.id, m.id) ?? ""} placeholder="—"
                           onChange={e => setNote(s.id, m.id, saisieTrimestre, e.target.value)}
-                          style={{ width: 56, padding: "4px 6px", borderRadius: 6, border: `1px solid ${C.line}`, fontSize: 12.5 }} />
-                      </Td>
+                          style={{ width: 56, textAlign: "center", padding: "4px 6px", borderRadius: 6, border: `1px solid ${C.line}`, fontSize: 12.5 }} />
+                      </td>
                     ))}
                   </tr>
                 ))}
-                {!eleves.length && <tr><Td style={{ textAlign: "center", color: C.textSoft }} colSpan={matieres.length + 1}>Aucun élève dans cette classe.</Td></tr>}
+                {!eleves.length && <tr><td style={{ textAlign: "center", color: C.textSoft, padding: "10px", border: `1px solid ${C.line}` }} colSpan={matieres.length + 1}>Aucun élève dans cette classe.</td></tr>}
               </tbody>
             </table>
           </Card>
@@ -740,10 +780,10 @@ export default function App() {
     if (!eleve) return null;
     const classeId = eleve.classeId;
     const matieres = matieresConfig[classeId] || [];
-    const noteOf = (matiereId) => notes.find(n => n.studentId === studentId && n.matiereId === matiereId && n.trimestre === bulTrimestre)?.note ?? null;
+    const noteOf = (matiereId) => noteDe(studentId, matiereId, bulTrimestre);
     let sommeCoef = 0, sommePondere = 0;
     matieres.forEach(m => { const n = noteOf(m.id); if (n != null) { sommeCoef += Number(m.coef); sommePondere += n * Number(m.coef); } });
-    const moyenne = sommeCoef ? (sommePondere / sommeCoef).toFixed(2) : null;
+    const moyenne = sommeCoef ? (sommePondere / sommeCoef) : null;
 
     return (
       <Card>
@@ -764,7 +804,7 @@ export default function App() {
           </div>
         </div>
 
-        <div className="f-display" style={{ textAlign: "center", fontWeight: 700, fontSize: 17, color: C.text, margin: "14px 0 2px", textTransform: "uppercase" }}>Bulletin de notes — {bulTrimestre}</div>
+        <div className="f-display" style={{ textAlign: "center", fontWeight: 700, fontSize: 17, color: C.text, margin: "14px 0 2px", textTransform: "uppercase" }}>Bulletin de notes — {bulTrimestre === "ANNUEL" ? "Annuel" : bulTrimestre}</div>
         {config.anneeScolaire && <div style={{ textAlign: "center", fontSize: 12, fontWeight: 700, marginBottom: 12 }}>Année Scolaire : {config.anneeScolaire}</div>}
 
         <div style={{ border: `1px solid ${C.text}`, padding: 10, marginBottom: 12, fontSize: 12.5 }}>
@@ -789,9 +829,11 @@ export default function App() {
                 <tr key={m.id}>
                   <td style={{ padding: "6px 8px", fontWeight: 600, border: `1px solid ${C.line}` }}>{m.nom}</td>
                   <td style={{ padding: "6px 8px", textAlign: "center", border: `1px solid ${C.line}` }}>
-                    <input type="number" min="0" max={config.bareme} step="0.5" value={n ?? ""} placeholder="—"
-                      onChange={e => setNote(studentId, m.id, bulTrimestre, e.target.value)}
-                      style={{ width: 50, textAlign: "center", padding: "3px 4px", borderRadius: 6, border: `1px solid ${C.line}`, fontSize: 12.5 }} />
+                    {bulTrimestre === "ANNUEL"
+                      ? <span className="f-mono">{n != null ? n.toFixed(1).replace(/\.0$/, "") : "—"}</span>
+                      : <input type="number" min="0" max={config.bareme} step="0.5" value={n ?? ""} placeholder="—"
+                          onChange={e => setNote(studentId, m.id, bulTrimestre, e.target.value)}
+                          style={{ width: 50, textAlign: "center", padding: "3px 4px", borderRadius: 6, border: `1px solid ${C.line}`, fontSize: 12.5 }} />}
                   </td>
                   <td className="f-mono" style={{ padding: "6px 8px", textAlign: "center", border: `1px solid ${C.line}` }}>{m.coef}</td>
                   <td className="f-mono" style={{ padding: "6px 8px", textAlign: "center", border: `1px solid ${C.line}` }}>{n != null ? (n * m.coef).toFixed(1).replace(/\.0$/, "") : "—"}</td>
@@ -813,11 +855,27 @@ export default function App() {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, marginTop: 10 }}>
           <tbody><tr>
             <td style={{ background: C.ink, color: "#fff", fontWeight: 700, padding: "8px 10px" }}>MOYENNE</td>
-            <td className="f-mono" style={{ padding: "8px 10px", border: `1px solid ${C.line}`, fontWeight: 700 }}>{moyenne ?? "—"} / {config.bareme}</td>
+            <td className="f-mono" style={{ padding: "8px 10px", border: `1px solid ${C.line}`, fontWeight: 700 }}>{moyenne != null ? moyenne.toFixed(2) : "—"} / {config.bareme}</td>
             <td style={{ background: C.ink, color: "#fff", fontWeight: 700, padding: "8px 10px" }}>RANG</td>
-            <td className="f-mono" style={{ padding: "8px 10px", border: `1px solid ${C.line}`, fontWeight: 700 }} colSpan={3}>{rangGeneral(studentId, classeId, bulTrimestre)}</td>
+            <td className="f-mono" style={{ padding: "8px 10px", border: `1px solid ${C.line}`, fontWeight: 700 }}>{rangGeneral(studentId, classeId, bulTrimestre)}</td>
+            <td style={{ background: C.ink, color: "#fff", fontWeight: 700, padding: "8px 10px" }}>APPRÉCIATION</td>
+            <td style={{ padding: "8px 10px", border: `1px solid ${C.line}`, fontWeight: 700 }}>{appreciationGenerale(moyenne)}</td>
           </tr></tbody>
         </table>
+
+        <div style={{ marginTop: 14 }}>
+          <div style={{ fontSize: 11.5, fontWeight: 700, color: C.text, marginBottom: 4 }}>Conduite et recommandations de suivi</div>
+          <textarea value={getConduite(studentId, bulTrimestre)} onChange={e => setConduiteTexte(studentId, bulTrimestre, e.target.value)}
+            placeholder="Remarques sur la conduite de l'élève, recommandations…" rows={2}
+            style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${C.line}`, borderRadius: 6, padding: 8, fontSize: 12.5, fontFamily: "'Public Sans',sans-serif", resize: "vertical" }} />
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 30 }}>
+          <div style={{ textAlign: "center", fontSize: 11, color: C.textSoft }}>
+            <div style={{ width: 180, borderTop: `1px solid ${C.text}`, marginBottom: 4 }} />
+            Signature du chef d'établissement
+          </div>
+        </div>
 
         <div className="no-print" style={{ marginTop: 14 }}>
           <Btn kind="ghost" onClick={() => { setBulEleve(studentId); setTimeout(() => window.print(), 50); }}><Printer size={13} /> Imprimer ce bulletin</Btn>
@@ -855,7 +913,10 @@ export default function App() {
 
         <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
           <Select value={bulClasse} onChange={e => { setBulClasse(e.target.value); setBulEleve(""); }}>{classes.map(c => <option key={c.id} value={c.id}>{c.nom}</option>)}</Select>
-          <Select value={bulTrimestre} onChange={e => setBulTrimestre(e.target.value)}>{periodes.map(t => <option key={t} value={t}>{t}</option>)}</Select>
+          <Select value={bulTrimestre} onChange={e => setBulTrimestre(e.target.value)}>
+            {periodes.map(t => <option key={t} value={t}>{t}</option>)}
+            <option value="ANNUEL">Bulletin annuel (moyenne des périodes)</option>
+          </Select>
           <Select value={bulEleve} onChange={e => setBulEleve(e.target.value)}><option value="">Voir un bulletin individuel…</option>{classeEleves.map(s => <option key={s.id} value={s.id}>{nomMat(s)}</option>)}</Select>
         </div>
 
@@ -935,7 +996,7 @@ export default function App() {
 
         <Card className="no-print">
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
-            <div style={{ fontWeight: 700, fontSize: 13 }}><ListOrdered size={14} style={{ verticalAlign: "-2px", marginRight: 4 }} />Classement — {classes.find(c => c.id === bulClasse)?.nom} ({bulTrimestre})</div>
+            <div style={{ fontWeight: 700, fontSize: 13 }}><ListOrdered size={14} style={{ verticalAlign: "-2px", marginRight: 4 }} />Classement — {classes.find(c => c.id === bulClasse)?.nom} ({bulTrimestre === "ANNUEL" ? "Annuel" : bulTrimestre})</div>
             <Btn onClick={() => setPrintAllView(true)}><Printer size={13} /> Imprimer tous les bulletins de la classe</Btn>
           </div>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
