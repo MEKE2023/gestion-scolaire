@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import {
   Home, Users, Layers, BarChart3, Wallet, PiggyBank, FileText, Lock, LogOut,
   Search, Download, Printer, Plus, Pencil, Trash2, Camera, AlertTriangle,
-  Check, X, ArrowUpDown, GraduationCap, Menu as MenuIcon, Award, BookOpen, ListOrdered, Package,
+  Check, X, ArrowUpDown, GraduationCap, Menu as MenuIcon, Award, BookOpen, ListOrdered, Package, Trophy, Eye, EyeOff,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
@@ -16,7 +16,15 @@ const FONTS = (
   <style>{`
     @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap');
     .f-display{font-family:'Fraunces',serif} .f-body{font-family:'Public Sans',sans-serif} .f-mono{font-family:'IBM Plex Mono',monospace}
-    @media print { .no-print{display:none !important} .print-area{position:absolute;top:0;left:0;width:100%;box-sizing:border-box} .print-area *{box-sizing:border-box} @page{margin:12mm} }
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
+    @media print {
+      .no-print{display:none !important}
+      @page{margin:0}
+      body{margin:0}
+      .print-area{position:absolute;top:0;left:0;width:100%;box-sizing:border-box;padding:14mm !important}
+      .print-area *{box-sizing:border-box}
+      .print-area table, .print-area th, .print-area td{border-collapse:collapse !important}
+    }
   `}</style>
 );
 const uid = (p) => p + Math.random().toString(36).slice(2, 8);
@@ -206,8 +214,6 @@ export default function App() {
     return () => clearTimeout(t);
   }, [classes, students, tranches, paiements, staff, paieHist, depenses, matieresConfig, notes, materiels, archives, conduites, config, session, dataLoaded]);
 
-  const [comptaAuthed, setComptaAuthed] = useState(false);
-  const [comptaPwd, setComptaPwd] = useState(""); const [comptaErr, setComptaErr] = useState(false);
 
   /* ---- Élèves ---- */
   const [eleveForm, setEleveForm] = useState(null);
@@ -229,6 +235,12 @@ export default function App() {
 
   /* ---- Saisie de notes ---- */
   const [saisieClasse, setSaisieClasse] = useState("cl1");
+  const [resultatClasse, setResultatClasse] = useState("cl1");
+  const [resultatAnnee, setResultatAnnee] = useState("");
+  const [comptaAuthed, setComptaAuthed] = useState(false);
+  const [comptaPwd, setComptaPwd] = useState(""); const [comptaErr, setComptaErr] = useState(false);
+  const [resultatPeriode, setResultatPeriode] = useState("");
+  const [satisfecitView, setSatisfecitView] = useState(false);
 
   /* ---- Matériels didactiques ---- */
   const [materielForm, setMaterielForm] = useState(null);
@@ -370,7 +382,9 @@ export default function App() {
     const mine = valeurs.find(x => x.id === studentId)?.v;
     if (mine == null) return "—";
     const meilleurs = valeurs.filter(x => x.v > mine).length;
-    return `${meilleurs + 1}${meilleurs === 0 ? "er" : "e"}`;
+    const exaequo = valeurs.filter(x => x.v === mine).length > 1;
+    const rang = meilleurs + 1;
+    return `${rang}${rang === 1 ? "er" : "e"}${exaequo ? " exo" : ""}`;
   };
   const moyenneEleve = (studentId, classeId, trimestre) => {
     const mats = matieresConfig[classeId] || [];
@@ -391,7 +405,9 @@ export default function App() {
     const moy = classement.find(x => x.student.id === studentId)?.moyenne;
     if (moy == null) return "—";
     const meilleurs = classement.filter(x => x.moyenne > moy).length;
-    return `${meilleurs + 1}${meilleurs === 0 ? "er" : "e"} / ${classement.length}`;
+    const exaequo = classement.filter(x => x.moyenne === moy).length > 1;
+    const rang = meilleurs + 1;
+    return `${rang}${rang === 1 ? "er" : "e"}${exaequo ? " exo" : ""} / ${classement.length}`;
   };
   const appreciationGenerale = (moy, bareme = 20) => {
     if (moy == null) return "—";
@@ -489,6 +505,7 @@ export default function App() {
     { k: "materiels", label: "Matériels didactiques", icon: Package },
     { k: "saisie", label: "Saisie de notes", icon: BookOpen },
     { k: "bulletin", label: "Bulletin", icon: Award },
+    { k: "resultats", label: "Résultats", icon: Trophy },
     { k: "comptabilite", label: "Comptabilité", icon: Wallet },
   ];
 
@@ -860,6 +877,194 @@ export default function App() {
     );
   };
 
+  /* ----- Résultats (classement imprimable, par classe / période / année) ----- */
+  const renderResultats = () => {
+    const classeR = classes.find(c => c.id === resultatClasse);
+    const bareme = classeR?.bareme || 20;
+    const periodesClasse = classeR?.periodes || [];
+    const anneeChoisie = resultatAnnee || config.anneeScolaire;
+    const periodeChoisie = resultatPeriode || periodesClasse[0] || "ANNUEL";
+    const anneesDisponibles = [config.anneeScolaire, ...Object.keys(archives)].filter((v, i, a) => a.indexOf(v) === i);
+    const notesSource = anneeChoisie === config.anneeScolaire ? notes : (archives[anneeChoisie]?.notes || []);
+    const matieres = matieresConfig[resultatClasse] || [];
+
+    const noteDeSrc = (studentId, matiereId, trimestre) => {
+      if (trimestre === "ANNUEL") {
+        const vals = periodesClasse.map(per => notesSource.find(n => n.studentId === studentId && n.matiereId === matiereId && n.trimestre === per)?.note).filter(v => v != null);
+        return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+      }
+      return notesSource.find(n => n.studentId === studentId && n.matiereId === matiereId && n.trimestre === trimestre)?.note ?? null;
+    };
+    const moyenneDe = (studentId) => {
+      let sc = 0, sp = 0;
+      matieres.forEach(m => { const n = noteDeSrc(studentId, m.id, periodeChoisie); if (n != null) { sc += Number(m.coef); sp += n * Number(m.coef); } });
+      return sc ? sp / sc : null;
+    };
+
+    const eleves = students.filter(s => s.classeId === resultatClasse);
+    const resultats = eleves.map(s => ({ student: s, moyenne: moyenneDe(s.id) }))
+      .sort((a, b) => { if (a.moyenne == null) return 1; if (b.moyenne == null) return -1; return b.moyenne - a.moyenne; });
+
+    const garcons = eleves.filter(s => s.sexe === "M");
+    const filles = eleves.filter(s => s.sexe === "F");
+    const estAdmis = (s) => { const m = moyenneDe(s.id); return m != null && (m / bareme * 20) >= 10; };
+    const admisG = garcons.filter(estAdmis).length;
+    const admisF = filles.filter(estAdmis).length;
+    const tauxG = garcons.length ? Math.round(admisG / garcons.length * 100) : 0;
+    const tauxF = filles.length ? Math.round(admisF / filles.length * 100) : 0;
+    const tauxTotal = eleves.length ? Math.round((admisG + admisF) / eleves.length * 100) : 0;
+
+    const resultatsAvecRang = resultats.map(r => {
+      const rang = r.moyenne != null ? resultats.filter(x => x.moyenne != null && x.moyenne > r.moyenne).length + 1 : null;
+      return { ...r, rang };
+    });
+    const top3 = resultatsAvecRang.filter(r => r.rang != null && r.rang <= 3);
+
+    const renderSatisfecitEleve = (r) => (
+      <div style={{ border: `3px double ${C.brass}`, borderRadius: 6, padding: "50px 40px", textAlign: "center", background: "#fff" }}>
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 6 }}>
+          <div style={{ width: 64, height: 64, borderRadius: "50%", border: `2px solid ${C.brass}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+            {config.logo ? <img src={config.logo} alt="Logo" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <GraduationCap size={28} color={C.brass} />}
+          </div>
+        </div>
+        <div style={{ fontSize: 12, fontWeight: 700 }}>{config.etablissement}</div>
+        <div style={{ fontSize: 10.5, color: C.textSoft }}>
+          {[config.etablissementAdresse, config.etablissementTels].filter(Boolean).join(" · ")}
+        </div>
+        <div style={{ fontSize: 10.5, letterSpacing: 3, color: C.textSoft, marginTop: 18 }}>ANNÉE SCOLAIRE {anneeChoisie}</div>
+        <div className="f-display" style={{ fontSize: 36, fontWeight: 700, color: C.ink, margin: "18px 0 6px", letterSpacing: 4 }}>SATISFECIT</div>
+        <div style={{ width: 110, height: 2, background: C.brass, margin: "0 auto 26px" }} />
+        <div style={{ fontSize: 12.5, color: C.textSoft }}>Ce prix d'excellence est décerné à</div>
+        <div className="f-display" style={{ fontSize: 25, fontWeight: 700, margin: "8px 0 6px", textTransform: "uppercase" }}>{r.student.prenoms} {r.student.nom}</div>
+        <div className="f-mono" style={{ fontSize: 11.5, color: C.textSoft, marginBottom: 18 }}>Matricule : {r.student.matricule}</div>
+        <div style={{ fontSize: 13, lineHeight: 1.9, maxWidth: 620, margin: "0 auto", color: C.text }}>
+          Élève de la classe <b>{classeR?.nom}</b>, classé <b>{r.rang}{r.rang === 1 ? "er" : "e"}</b>, Moyenne Générale de <b>{r.moyenne.toFixed(2)} / {bareme}</b>, pour son brillant parcours académique au cours de l'année scolaire : <b>{anneeChoisie}</b>.
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginTop: 60 }}>
+          <div style={{ fontSize: 10.5, color: C.textSoft }}>Fait le {new Date().toLocaleDateString("fr-FR")}</div>
+          <div style={{ textAlign: "center", fontSize: 11, color: C.textSoft }}>
+            <div style={{ width: 170, borderTop: `1px solid ${C.text}`, marginBottom: 4 }} />
+            Le Chef d'établissement
+          </div>
+        </div>
+      </div>
+    );
+
+    if (satisfecitView) {
+      return (
+        <div>
+          <style>{`@media print { @page { size: landscape; } }`}</style>
+          <div className="no-print" style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+            <Btn kind="ghost" onClick={() => setSatisfecitView(false)}><X size={13} /> Fermer l'aperçu</Btn>
+            <Btn onClick={() => window.print()}><Printer size={13} /> Imprimer les satisfécits</Btn>
+          </div>
+          {!top3.length && <Card><div style={{ fontSize: 12, color: C.textSoft }}>Aucun élève classé (moyenne annuelle manquante) pour cette classe.</div></Card>}
+          {top3.map((r, i) => (
+            <div key={r.student.id} className="print-area" style={{ pageBreakAfter: i < top3.length - 1 ? "always" : "auto", marginBottom: 16 }}>
+              {renderSatisfecitEleve(r)}
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    return (
+      <div>
+        <div className="f-display" style={{ fontSize: 22, color: C.text, fontWeight: 600, marginBottom: 4 }}>Résultats</div>
+        <div style={{ color: C.textSoft, fontSize: 13, marginBottom: 16 }}>Classement imprimable de la classe, par trimestre, semestre ou en annuel.</div>
+
+        <div className="no-print" style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+          <Select value={resultatClasse} onChange={e => { setResultatClasse(e.target.value); setResultatPeriode(""); }}>{classes.map(c => <option key={c.id} value={c.id}>{c.nom}</option>)}</Select>
+          <Select value={anneeChoisie} onChange={e => setResultatAnnee(e.target.value)}>{anneesDisponibles.map(a => <option key={a} value={a}>{a}</option>)}</Select>
+          <Select value={periodeChoisie} onChange={e => setResultatPeriode(e.target.value)}>
+            {periodesClasse.map(p => <option key={p} value={p}>{p}</option>)}
+            <option value="ANNUEL">Annuel (moyenne des périodes)</option>
+          </Select>
+          <Btn kind="ghost" onClick={() => window.print()}><Printer size={13} /> Imprimer</Btn>
+          {periodeChoisie === "ANNUEL" && (
+            <Btn kind="brass" onClick={() => setSatisfecitView(true)}><Award size={13} /> Générer les satisfécits (Top 3)</Btn>
+          )}
+        </div>
+
+        {anneeChoisie !== config.anneeScolaire && (
+          <div className="no-print" style={{ fontSize: 11, color: C.textSoft, marginBottom: 10 }}>Année archivée : les notes affichées sont celles de {anneeChoisie}, mais la liste des élèves reflète leur classe actuelle.</div>
+        )}
+
+        <Card className="print-area">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 4 }}>
+            <div style={{ fontSize: 11.5, lineHeight: 1.7, fontWeight: 700 }}>
+              <div>{config.etablissement}</div>
+              {config.etablissementAdresse && <div>{config.etablissementAdresse}</div>}
+              {config.etablissementTels && <div>TÉLS : {config.etablissementTels}</div>}
+              {config.ire && <div>IRE : {config.ire}</div>}
+              {config.dpe && <div>DPE : {config.dpe}</div>}
+            </div>
+            <div style={{ width: 60, height: 60, borderRadius: "50%", border: `2px solid ${C.brass}`, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+              {config.logo ? <img src={config.logo} alt="Logo" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <GraduationCap size={26} color={C.brass} />}
+            </div>
+            <div style={{ fontSize: 11.5, lineHeight: 1.7, fontWeight: 700, textAlign: "right" }}>
+              <div>RÉPUBLIQUE DE GUINÉE</div>
+              <div style={{ fontWeight: 400, fontSize: 10.5 }}>Travail – Justice – Solidarité</div>
+            </div>
+          </div>
+
+          <div className="f-display" style={{ textAlign: "center", fontWeight: 700, fontSize: 17, color: C.text, margin: "14px 0 2px", textTransform: "uppercase" }}>
+            Rapport du {periodeChoisie === "ANNUEL" ? "Bilan Annuel" : periodeChoisie}
+          </div>
+          <div style={{ textAlign: "center", fontSize: 12, fontWeight: 700, marginBottom: 2 }}>Année Scolaire : {anneeChoisie}</div>
+          <div style={{ textAlign: "center", fontSize: 13, fontWeight: 700, marginBottom: 14 }}>Classe : {classeR?.nom}</div>
+
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, border: `1px solid ${C.text}` }}>
+            <thead><tr>
+              {["Rang", "Prénoms et Nom", "Matricule", "Moyenne Générale", "Appréciation"].map(h => (
+                <th key={h} style={{ background: C.ink, color: "#fff", padding: "7px 8px", textAlign: h === "Prénoms et Nom" ? "left" : "center", fontSize: 11, textTransform: "uppercase", border: `1px solid ${C.ink}` }}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {resultats.map(r => {
+                const rang = r.moyenne != null ? resultats.filter(x => x.moyenne != null && x.moyenne > r.moyenne).length + 1 : null;
+                const exaequo = r.moyenne != null && resultats.filter(x => x.moyenne === r.moyenne).length > 1;
+                return (
+                  <tr key={r.student.id}>
+                    <td style={{ padding: "6px 8px", textAlign: "center", fontWeight: 700, border: `1px solid ${C.line}` }}>{rang != null ? `${rang}${rang === 1 ? "er" : "e"}${exaequo ? " exo" : ""}` : "—"}</td>
+                    <td style={{ padding: "6px 8px", fontWeight: 600, border: `1px solid ${C.line}` }}>{r.student.prenoms} {r.student.nom}</td>
+                    <td className="f-mono" style={{ padding: "6px 8px", textAlign: "center", border: `1px solid ${C.line}` }}>{r.student.matricule}</td>
+                    <td className="f-mono" style={{ padding: "6px 8px", textAlign: "center", fontWeight: 700, border: `1px solid ${C.line}` }}>{r.moyenne != null ? r.moyenne.toFixed(2) : "—"} / {bareme}</td>
+                    <td style={{ padding: "6px 8px", border: `1px solid ${C.line}` }}>{appreciationGenerale(r.moyenne, bareme)}</td>
+                  </tr>
+                );
+              })}
+              {!resultats.length && <tr><td style={{ textAlign: "center", color: C.textSoft, padding: 10, border: `1px solid ${C.line}` }} colSpan={5}>Aucun élève dans cette classe.</td></tr>}
+            </tbody>
+          </table>
+
+          <div className="f-display" style={{ fontWeight: 700, fontSize: 13, margin: "20px 0 8px" }}>Statistiques de la classe</div>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, border: `1px solid ${C.text}` }}>
+            <thead><tr>
+              {["", "Garçons", "Filles", "Total"].map(h => (
+                <th key={h} style={{ background: C.ink, color: "#fff", padding: "7px 8px", textAlign: "center", fontSize: 11, textTransform: "uppercase", border: `1px solid ${C.ink}` }}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              <tr>
+                <td style={{ padding: "6px 8px", fontWeight: 700, border: `1px solid ${C.line}` }}>Effectif</td>
+                <td className="f-mono" style={{ padding: "6px 8px", textAlign: "center", border: `1px solid ${C.line}` }}>{garcons.length}</td>
+                <td className="f-mono" style={{ padding: "6px 8px", textAlign: "center", border: `1px solid ${C.line}` }}>{filles.length}</td>
+                <td className="f-mono" style={{ padding: "6px 8px", textAlign: "center", fontWeight: 700, border: `1px solid ${C.line}` }}>{eleves.length}</td>
+              </tr>
+              <tr>
+                <td style={{ padding: "6px 8px", fontWeight: 700, border: `1px solid ${C.line}` }}>Taux d'admission</td>
+                <td className="f-mono" style={{ padding: "6px 8px", textAlign: "center", border: `1px solid ${C.line}` }}>{tauxG}%</td>
+                <td className="f-mono" style={{ padding: "6px 8px", textAlign: "center", border: `1px solid ${C.line}` }}>{tauxF}%</td>
+                <td className="f-mono" style={{ padding: "6px 8px", textAlign: "center", fontWeight: 700, border: `1px solid ${C.line}` }}>{tauxTotal}%</td>
+              </tr>
+            </tbody>
+          </table>
+        </Card>
+      </div>
+    );
+  };
+
   /* ----- Bulletin (au choix du responsable) ----- */
   const renderBulletinEleve = (studentId) => {
     const eleve = students.find(s => s.id === studentId);
@@ -1061,14 +1266,18 @@ export default function App() {
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead><tr><Th>Rang</Th><Th>Élève</Th><Th>Moyenne</Th><Th>Mention</Th></tr></thead>
             <tbody>
-              {classement.map((c, i) => (
-                <tr key={c.student.id} onClick={() => setBulEleve(c.student.id)} style={{ cursor: "pointer" }}>
-                  <Td style={{ fontWeight: 700 }}>{i + 1}{i === 0 ? "er" : "e"}</Td>
-                  <Td style={{ fontWeight: 600 }}>{c.student.prenoms} {c.student.nom}<div className="f-mono" style={{ fontWeight: 400, fontSize: 10.5, color: C.textSoft }}>Matricule : {c.student.matricule}</div></Td>
-                  <Td className="f-mono">{c.moyenne != null ? c.moyenne.toFixed(2) : "—"}</Td>
-                  <Td><Pill_ text={mention(c.moyenne, classeBul?.bareme || 20)} color={c.moyenne >= 12 ? C.sage : c.moyenne >= 10 ? C.brass : C.rose} bg={c.moyenne >= 12 ? C.sageSoft : c.moyenne >= 10 ? C.brassSoft : C.roseSoft} /></Td>
-                </tr>
-              ))}
+              {classement.map((c, i) => {
+                const rangReel = c.moyenne != null ? classement.filter(x => x.moyenne != null && x.moyenne > c.moyenne).length + 1 : null;
+                const exaequo = c.moyenne != null && classement.filter(x => x.moyenne === c.moyenne).length > 1;
+                return (
+                  <tr key={c.student.id} onClick={() => setBulEleve(c.student.id)} style={{ cursor: "pointer" }}>
+                    <Td style={{ fontWeight: 700 }}>{rangReel != null ? `${rangReel}${rangReel === 1 ? "er" : "e"}${exaequo ? " exo" : ""}` : "—"}</Td>
+                    <Td style={{ fontWeight: 600 }}>{c.student.prenoms} {c.student.nom}<div className="f-mono" style={{ fontWeight: 400, fontSize: 10.5, color: C.textSoft }}>Matricule : {c.student.matricule}</div></Td>
+                    <Td className="f-mono">{c.moyenne != null ? c.moyenne.toFixed(2) : "—"}</Td>
+                    <Td><Pill_ text={mention(c.moyenne, classeBul?.bareme || 20)} color={c.moyenne >= 12 ? C.sage : c.moyenne >= 10 ? C.brass : C.rose} bg={c.moyenne >= 12 ? C.sageSoft : c.moyenne >= 10 ? C.brassSoft : C.roseSoft} /></Td>
+                  </tr>
+                );
+              })}
               {!classement.length && <tr><Td style={{ textAlign: "center", color: C.textSoft }} colSpan={4}>Aucun élève dans cette classe.</Td></tr>}
             </tbody>
           </table>
@@ -1453,10 +1662,8 @@ export default function App() {
               <Input placeholder="Code ou symbole de la devise" onChange={e => setConfig({ ...config, devise: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
             )}
             <div style={{ marginTop: 12, fontSize: 12, color: C.textSoft }}>Aperçu : <b className="f-mono" style={{ color: C.text }}>{fmt(125000)}</b></div>
-            <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${C.line}` }}>
-              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Mot de passe comptabilité</div>
-              <Input type="text" value={config.comptaPassword} onChange={e => setConfig({ ...config, comptaPassword: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
-              <div style={{ fontSize: 11, color: C.textSoft, marginTop: 4 }}>Communiquez ce mot de passe uniquement au comptable.</div>
+            <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${C.line}`, fontSize: 11.5, color: C.textSoft }}>
+              Le mot de passe comptabilité n'est plus modifiable depuis cet écran. Pour le changer, ouvrez votre projet Supabase → Table Editor → table <b>app_state</b> → ligne <b>main</b> → modifiez le champ <b>comptaPassword</b> dans la colonne "data".
             </div>
           </Card>
         )}
@@ -1509,7 +1716,7 @@ export default function App() {
     );
   };
 
-  const pages = { accueil: renderAccueil, eleves: renderEleves, classes: renderClasses, materiels: renderMateriels, saisie: renderSaisie, bulletin: renderBulletin, comptabilite: renderComptabilite };
+  const pages = { accueil: renderAccueil, eleves: renderEleves, classes: renderClasses, materiels: renderMateriels, saisie: renderSaisie, bulletin: renderBulletin, resultats: renderResultats, comptabilite: renderComptabilite };
 
   return (
     <div className="f-body" style={{ minHeight: "100vh", background: C.paper, display: "flex" }}>
