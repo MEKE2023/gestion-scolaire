@@ -22,6 +22,7 @@ const FONTS = (
 const uid = (p) => p + Math.random().toString(36).slice(2, 8);
 const nomMat = (s) => s ? `${s.prenoms} ${s.nom} — Matricule : ${s.matricule}` : "—";
 const MOIS = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
+const ANNEES_SCOLAIRES = Array.from({ length: 20 }, (_, i) => `${2026 + i}-${2027 + i}`);
 
 /* ================= Données de démonstration ================= */
 const initClasses = () => ([
@@ -135,6 +136,7 @@ export default function App() {
   const [matieresConfig, setMatieresConfig] = useState(initMatieres());
   const [notes, setNotes] = useState(initNotes());
   const [materiels, setMateriels] = useState(initMateriels());
+  const [archives, setArchives] = useState({});
 
   /* ---- Paramètres généraux (devise, bulletin, mot de passe comptabilité) ---- */
   const [config, setConfig] = useState({ devise: "GNF", etablissement: "GROUPE SCOLAIRE PRIVÉ CARMEL", etablissementAdresse: "", etablissementTels: "", etablissementEmail: "", ire: "", dpe: "", anneeScolaire: "2026-2027", bareme: 20, comptaPassword: "compta2026", logo: null });
@@ -170,6 +172,7 @@ export default function App() {
         setMatieresConfig(d.matieresConfig || initMatieres());
         setNotes(d.notes || initNotes());
         setMateriels(d.materiels || initMateriels());
+        setArchives(d.archives || {});
         setConfig(d.config || { devise: "GNF", etablissement: "GROUPE SCOLAIRE PRIVÉ CARMEL", etablissementAdresse: "", etablissementTels: "", etablissementEmail: "", ire: "", dpe: "", anneeScolaire: "2026-2027", bareme: 20, comptaPassword: "compta2026", logo: null });
         setPeriodes(d.periodes || ["Trimestre 1", "Trimestre 2", "Trimestre 3"]);
       } else {
@@ -178,7 +181,7 @@ export default function App() {
           data: {
             classes: initClasses(), students: initStudents(), tranches: initTranches(), paiements: initPaiements(),
             staff: initStaff(), paieHist: initPaieHist(), depenses: initDepenses(), matieresConfig: initMatieres(),
-            notes: initNotes(), materiels: initMateriels(), config: { devise: "GNF", etablissement: "GROUPE SCOLAIRE PRIVÉ CARMEL", etablissementAdresse: "", etablissementTels: "", etablissementEmail: "", ire: "", dpe: "", anneeScolaire: "2026-2027", bareme: 20, comptaPassword: "compta2026", logo: null },
+            notes: initNotes(), materiels: initMateriels(), archives: {}, config: { devise: "GNF", etablissement: "GROUPE SCOLAIRE PRIVÉ CARMEL", etablissementAdresse: "", etablissementTels: "", etablissementEmail: "", ire: "", dpe: "", anneeScolaire: "2026-2027", bareme: 20, comptaPassword: "compta2026", logo: null },
             periodes: ["Trimestre 1", "Trimestre 2", "Trimestre 3"],
           },
         });
@@ -192,12 +195,12 @@ export default function App() {
     const t = setTimeout(() => {
       supabase.from("app_state").upsert({
         id: "main",
-        data: { classes, students, tranches, paiements, staff, paieHist, depenses, matieresConfig, notes, materiels, config, periodes },
+        data: { classes, students, tranches, paiements, staff, paieHist, depenses, matieresConfig, notes, materiels, archives, config, periodes },
         updated_at: new Date().toISOString(),
       }).then();
     }, 800);
     return () => clearTimeout(t);
-  }, [classes, students, tranches, paiements, staff, paieHist, depenses, matieresConfig, notes, materiels, config, periodes, session, dataLoaded]);
+  }, [classes, students, tranches, paiements, staff, paieHist, depenses, matieresConfig, notes, materiels, archives, config, periodes, session, dataLoaded]);
 
   const [comptaAuthed, setComptaAuthed] = useState(false);
   const [comptaPwd, setComptaPwd] = useState(""); const [comptaErr, setComptaErr] = useState(false);
@@ -270,6 +273,24 @@ export default function App() {
   const addClasse = () => { if (!nouvelleClasse.trim()) return; setClasses(prev => [...prev, { id: uid("cl"), nom: nouvelleClasse.trim(), montantAnnuel: 0 }]); setNouvelleClasse(""); };
   const renameClasse = (id, nom) => setClasses(prev => prev.map(c => c.id === id ? { ...c, nom } : c));
   const setMontantAnnuelClasse = (id, montant) => setClasses(prev => prev.map(c => c.id === id ? { ...c, montantAnnuel: montant } : c));
+  const changerAnneeScolaire = (nouvelle) => {
+    if (!nouvelle || nouvelle === config.anneeScolaire) return;
+    const dejaArchivee = !!archives[nouvelle];
+    const ok = window.confirm(
+      dejaArchivee
+        ? `Revenir sur l'année scolaire ${nouvelle} ? Les données de ${config.anneeScolaire} seront mises de côté et celles de ${nouvelle} seront restaurées.`
+        : `Passer à l'année scolaire ${nouvelle} ?\n\nLes données de ${config.anneeScolaire} (notes, paiements, salaires, dépenses) seront archivées — vous pourrez les revoir en revenant sur cette année plus tard.\nLa liste des élèves et des classes reste commune à toutes les années.`
+    );
+    if (!ok) return;
+    const anneeQuittee = config.anneeScolaire;
+    const donneesCibles = archives[nouvelle] || { notes: [], paiements: [], paieHist: [], depenses: [] };
+    setArchives(prev => ({ ...prev, [anneeQuittee]: { notes, paiements, paieHist, depenses } }));
+    setNotes(donneesCibles.notes || []);
+    setPaiements(donneesCibles.paiements || []);
+    setPaieHist(donneesCibles.paieHist || []);
+    setDepenses(donneesCibles.depenses || []);
+    setConfig(prev => ({ ...prev, anneeScolaire: nouvelle }));
+  };
   const deleteClasse = (id) => { setClasses(prev => prev.filter(c => c.id !== id)); if (classeSelectionnee === id) setClasseSelectionnee(null); };
   const addPeriode = () => { if (!nouvellePeriode.trim()) return; setPeriodes(prev => [...prev, nouvellePeriode.trim()]); setNouvellePeriode(""); };
   const renamePeriode = (i, val) => setPeriodes(prev => prev.map((p, idx) => idx === i ? val : p));
@@ -535,6 +556,14 @@ export default function App() {
       <div>
         <div className="f-display" style={{ fontSize: 22, color: C.text, fontWeight: 600, marginBottom: 4 }}>Classes</div>
         <div style={{ color: C.textSoft, fontSize: 13, marginBottom: 16 }}>Ajoutez autant de niveaux que nécessaire — aucune limite.</div>
+
+        <Card>
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>Année scolaire</div>
+          <div style={{ fontSize: 11, color: C.textSoft, marginBottom: 10 }}>Chaque année scolaire garde ses propres notes, paiements, salaires et dépenses. Vous pouvez revenir sur une année passée à tout moment pour la revoir.</div>
+          <Select value={config.anneeScolaire} onChange={e => changerAnneeScolaire(e.target.value)}>
+            {ANNEES_SCOLAIRES.map(a => <option key={a} value={a}>{a}</option>)}
+          </Select>
+        </Card>
         <Card>
           <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
             <Input placeholder="Nom du nouveau niveau (ex : CP)" value={nouvelleClasse} onChange={e => setNouvelleClasse(e.target.value)}
@@ -845,7 +874,8 @@ export default function App() {
             </div>
             <div>
               <div style={{ fontSize: 11, color: C.textSoft, marginBottom: 4 }}>Année scolaire</div>
-              <Input value={config.anneeScolaire} onChange={e => setConfig({ ...config, anneeScolaire: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
+              <div style={{ padding: "8px 10px", borderRadius: 8, border: `1px solid ${C.line}`, fontSize: 13, background: C.paper, color: C.text }}>{config.anneeScolaire}</div>
+              <div style={{ fontSize: 10, color: C.textSoft, marginTop: 2 }}>Modifiable dans le menu Classes</div>
             </div>
             <div>
               <div style={{ fontSize: 11, color: C.textSoft, marginBottom: 4 }}>IRE</div>
@@ -948,9 +978,9 @@ export default function App() {
 
     return (
       <div>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+        <div className="no-print" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
           <div className="f-display" style={{ fontSize: 22, color: C.text, fontWeight: 600 }}>Comptabilité</div>
-          <Btn kind="ghost" className="no-print" onClick={() => setComptaAuthed(false)}><Lock size={13} /> Verrouiller</Btn>
+          <Btn kind="ghost" onClick={() => setComptaAuthed(false)}><Lock size={13} /> Verrouiller</Btn>
         </div>
         <div className="no-print" style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
           {subtabs.map(([k, l]) => <Btn key={k} kind={compTab === k ? "primary" : "ghost"} onClick={() => setCompTab(k)}>{l}</Btn>)}
@@ -1097,7 +1127,7 @@ export default function App() {
 
         {compTab === "paiement" && (
           <Card>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
+            <div className="no-print" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
               <Select value={paieClasseFiltre} onChange={e => { setPaieClasseFiltre(e.target.value); setPaieForm({ ...paieForm, studentId: "" }); }}>
                 <option value="">Classe…</option>{classes.map(c => <option key={c.id} value={c.id}>{c.nom}</option>)}
               </Select>
@@ -1109,7 +1139,7 @@ export default function App() {
               <Input type="number" placeholder="Montant versé" value={paieForm.montant} onChange={e => setPaieForm({ ...paieForm, montant: e.target.value })} />
               <Select value={paieForm.mode} onChange={e => setPaieForm({ ...paieForm, mode: e.target.value })}><option>Espèces</option><option>Mobile Money</option><option>Virement</option><option>Chèque</option></Select>
             </div>
-            <Btn onClick={enregistrerPaiement}><Check size={13} /> Enregistrer le paiement</Btn>
+            <Btn className="no-print" onClick={enregistrerPaiement}><Check size={13} /> Enregistrer le paiement</Btn>
 
             {recu && (() => {
               const el = students.find(s => s.id === recu.studentId);
@@ -1120,17 +1150,17 @@ export default function App() {
               const numero = paiements.findIndex(p => p.id === recu.id) + 1;
               const dateHeure = `${new Date().toLocaleDateString("fr-FR")} ${new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`;
               const Section = ({ title }) => (
-                <div style={{ background: C.ink, color: "#fff", textAlign: "center", fontWeight: 700, fontSize: 11.5, padding: "6px 0", textTransform: "uppercase", marginTop: 14 }}>{title}</div>
+                <div style={{ background: C.ink, color: "#fff", textAlign: "center", fontWeight: 700, fontSize: 11.5, padding: "6px 0", textTransform: "uppercase", marginTop: 16, border: `1px solid ${C.ink}` }}>{title}</div>
               );
               const Row = ({ label, value, bold }) => (
                 <tr>
-                  <Td style={{ color: C.textSoft, border: "none", padding: "5px 10px", width: "50%" }}>{label}</Td>
-                  <Td className="f-mono" style={{ border: "none", padding: "5px 10px", textAlign: "center", fontWeight: bold ? 700 : 500 }}>{value}</Td>
+                  <Td style={{ color: C.textSoft, padding: "6px 10px", width: "50%", border: `1px solid ${C.line}` }}>{label}</Td>
+                  <Td className="f-mono" style={{ padding: "6px 10px", textAlign: "center", fontWeight: bold ? 700 : 500, border: `1px solid ${C.line}` }}>{value}</Td>
                 </tr>
               );
               return (
-                <div className="print-area" style={{ marginTop: 16, border: `1px solid ${C.line}`, borderRadius: 10, padding: 22 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
+                <div className="print-area" style={{ marginTop: 16, border: `2px solid ${C.ink}`, borderRadius: 4, padding: 26, background: "#fff" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, flexWrap: "wrap", paddingBottom: 14, borderBottom: `2px solid ${C.ink}` }}>
                     <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
                       <div style={{ width: 56, height: 56, borderRadius: "50%", border: `2px solid ${C.brass}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0 }}>
                         {config.logo ? <img src={config.logo} alt="Logo" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <GraduationCap size={24} color={C.brass} />}
@@ -1144,34 +1174,41 @@ export default function App() {
                     </div>
                     <div style={{ textAlign: "right" }}>
                       <div className="f-display" style={{ fontWeight: 700, fontSize: 15, textTransform: "uppercase" }}>Reçu de paiement</div>
-                      <div className="f-mono" style={{ fontSize: 20, fontWeight: 700, color: C.brass }}>{numero}</div>
+                      <div className="f-mono" style={{ fontSize: 22, fontWeight: 700, color: C.brass }}>N° {numero}</div>
+                      <div style={{ fontSize: 11, color: C.textSoft, marginTop: 4 }}>DATE : {dateHeure}</div>
                     </div>
                   </div>
-                  <div style={{ textAlign: "center", fontSize: 12, color: C.textSoft, marginTop: 10 }}>DATE : {dateHeure}</div>
 
                   <Section title="Informations élève" />
-                  <table style={{ width: "100%", fontSize: 13 }}><tbody>
+                  <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}><tbody>
                     <Row label="Nom et Prénoms" value={`${el?.nom} ${el?.prenoms}`} bold />
                     <Row label="Matricule" value={el?.matricule} />
                     <Row label="Statut" value={el?.statut || "Nouveau"} />
                   </tbody></table>
 
                   <Section title="Informations scolaire" />
-                  <table style={{ width: "100%", fontSize: 13 }}><tbody>
-                    <Row label="Cycle" value={classeEl?.cycle || "—"} />
+                  <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}><tbody>
                     <Row label="Classe" value={classeEl?.nom} />
                     <Row label="Libellé classe" value={classeEl?.nom} />
                     <Row label="Année scolaire" value={config.anneeScolaire} />
                   </tbody></table>
 
                   <Section title="Informations paiement" />
-                  <table style={{ width: "100%", fontSize: 13 }}><tbody>
+                  <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}><tbody>
                     <Row label="Libellé paiement" value={tranches.find(t => t.id === recu.trancheId)?.nom} />
                     <Row label="Montant à payer" value={fmt(attendu)} />
                     <Row label="Montant payé" value={fmt(paye)} bold />
                     <Row label="Date de paiement" value={recu.date} />
                     <Row label="Reste à payer" value={reste > 0 ? fmt(reste) : "—"} bold />
                   </tbody></table>
+
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginTop: 40 }}>
+                    <div style={{ fontSize: 10.5, fontStyle: "italic", color: C.textSoft }}>Merci de conserver ce reçu.</div>
+                    <div style={{ textAlign: "center", fontSize: 11, color: C.textSoft }}>
+                      <div style={{ width: 160, borderTop: `1px solid ${C.text}`, marginBottom: 4 }} />
+                      Signature / Cachet
+                    </div>
+                  </div>
 
                   <Btn kind="ghost" className="no-print" onClick={() => window.print()} style={{ marginTop: 16 }}><Printer size={13} /> Imprimer le reçu</Btn>
                 </div>
