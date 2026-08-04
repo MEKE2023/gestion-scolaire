@@ -16,7 +16,7 @@ const FONTS = (
   <style>{`
     @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap');
     .f-display{font-family:'Fraunces',serif} .f-body{font-family:'Public Sans',sans-serif} .f-mono{font-family:'IBM Plex Mono',monospace}
-    @media print { .no-print{display:none !important} .print-area{position:absolute;top:0;left:0;width:100%} }
+    @media print { .no-print{display:none !important} .print-area{position:absolute;top:0;left:0;width:100%;box-sizing:border-box} .print-area *{box-sizing:border-box} @page{margin:12mm} }
   `}</style>
 );
 const uid = (p) => p + Math.random().toString(36).slice(2, 8);
@@ -173,7 +173,13 @@ export default function App() {
         setNotes(d.notes || initNotes());
         setMateriels(d.materiels || initMateriels());
         setArchives(d.archives || {});
-        setConfig(d.config || { devise: "GNF", etablissement: "GROUPE SCOLAIRE PRIVÉ CARMEL", etablissementAdresse: "", etablissementTels: "", etablissementEmail: "", ire: "", dpe: "", anneeScolaire: "2026-2027", bareme: 20, comptaPassword: "compta2026", logo: null });
+        {
+          const loadedConfig = d.config || { devise: "GNF", etablissement: "GROUPE SCOLAIRE PRIVÉ CARMEL", etablissementAdresse: "", etablissementTels: "", etablissementEmail: "", ire: "", dpe: "", anneeScolaire: "2026-2027", bareme: 20, comptaPassword: "compta2026", logo: null };
+          setConfig({
+            ...loadedConfig,
+            anneeScolaire: ANNEES_SCOLAIRES.includes(loadedConfig.anneeScolaire) ? loadedConfig.anneeScolaire : ANNEES_SCOLAIRES[0],
+          });
+        }
         setPeriodes(d.periodes || ["Trimestre 1", "Trimestre 2", "Trimestre 3"]);
       } else {
         await supabase.from("app_state").insert({
@@ -1141,6 +1147,21 @@ export default function App() {
             </div>
             <Btn className="no-print" onClick={enregistrerPaiement}><Check size={13} /> Enregistrer le paiement</Btn>
 
+            {paieForm.studentId && (() => {
+              const historiqueEleve = paiements.filter(p => p.studentId === paieForm.studentId).sort((a, b) => b.date.localeCompare(a.date));
+              return (
+                <div className="no-print" style={{ marginTop: 16 }}>
+                  <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 6 }}>Paiements déjà enregistrés pour cet élève</div>
+                  {historiqueEleve.length ? historiqueEleve.map(p => (
+                    <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderTop: `1px solid ${C.line}`, fontSize: 12.5 }}>
+                      <div>{p.date} — {tranches.find(t => t.id === p.trancheId)?.nom} — <span className="f-mono">{fmt(p.montant)}</span> ({p.mode})</div>
+                      <Btn kind="ghost" onClick={() => setRecuId(p.id)}><Printer size={12} /> Imprimer le reçu</Btn>
+                    </div>
+                  )) : <div style={{ fontSize: 12, color: C.textSoft }}>Aucun paiement enregistré pour le moment.</div>}
+                </div>
+              );
+            })()}
+
             {recu && (() => {
               const el = students.find(s => s.id === recu.studentId);
               const classeEl = classes.find(c => c.id === el?.classeId);
@@ -1159,7 +1180,7 @@ export default function App() {
                 </tr>
               );
               return (
-                <div className="print-area" style={{ marginTop: 16, border: `2px solid ${C.ink}`, borderRadius: 4, padding: 26, background: "#fff" }}>
+                <div className="print-area" style={{ marginTop: 16, border: `2px solid ${C.ink}`, borderRadius: 4, padding: 22, background: "#fff", boxSizing: "border-box" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, flexWrap: "wrap", paddingBottom: 14, borderBottom: `2px solid ${C.ink}` }}>
                     <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
                       <div style={{ width: 56, height: 56, borderRadius: "50%", border: `2px solid ${C.brass}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0 }}>
