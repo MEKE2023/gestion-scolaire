@@ -26,9 +26,9 @@ const ANNEES_SCOLAIRES = Array.from({ length: 20 }, (_, i) => `${2026 + i}-${202
 
 /* ================= Données de démonstration ================= */
 const initClasses = () => ([
-  { id: "cl1", nom: "Petite Section", montantAnnuel: 150000 },
-  { id: "cl2", nom: "Moyenne Section", montantAnnuel: 150000 },
-  { id: "cl3", nom: "Grande Section", montantAnnuel: 150000 },
+  { id: "cl1", nom: "Petite Section", montantAnnuel: 150000, bareme: 20, periodes: ["Trimestre 1", "Trimestre 2", "Trimestre 3"] },
+  { id: "cl2", nom: "Moyenne Section", montantAnnuel: 150000, bareme: 20, periodes: ["Trimestre 1", "Trimestre 2", "Trimestre 3"] },
+  { id: "cl3", nom: "Grande Section", montantAnnuel: 150000, bareme: 20, periodes: ["Trimestre 1", "Trimestre 2", "Trimestre 3"] },
 ]);
 const initStudents = () => ([
   { id: "e1", prenoms: "Léa", nom: "Bernard", sexe: "F", naissance: "2021-03-12", lieuNaissance: "", statut: "Ancien", matricule: "MAT-0001", classeId: "cl1", parent: "Mme Bernard", telephone: "07 01 02 03 04", photo: null },
@@ -141,12 +141,10 @@ export default function App() {
 
   /* ---- Paramètres généraux (devise, bulletin, mot de passe comptabilité) ---- */
   const [config, setConfig] = useState({ devise: "GNF", etablissement: "GROUPE SCOLAIRE PRIVÉ CARMEL", etablissementAdresse: "", etablissementTels: "", etablissementEmail: "", ire: "", dpe: "", anneeScolaire: "2026-2027", bareme: 20, comptaPassword: "compta2026", logo: null });
-  const [periodes, setPeriodes] = useState(["Trimestre 1", "Trimestre 2", "Trimestre 3"]);
-  const [nouvellePeriode, setNouvellePeriode] = useState("");
   const fmt = (n) => Number(n || 0).toLocaleString("fr-FR") + " " + config.devise;
-  const mention = (n) => {
+  const mention = (n, bareme = 20) => {
     if (n == null) return "—";
-    const r = n / config.bareme * 20;
+    const r = n / bareme * 20;
     return r >= 16 ? "Très Bien" : r >= 14 ? "Bien" : r >= 12 ? "Assez Bien" : r >= 10 ? "Passable" : "Insuffisant";
   };
 
@@ -182,7 +180,6 @@ export default function App() {
             anneeScolaire: ANNEES_SCOLAIRES.includes(loadedConfig.anneeScolaire) ? loadedConfig.anneeScolaire : ANNEES_SCOLAIRES[0],
           });
         }
-        setPeriodes(d.periodes || ["Trimestre 1", "Trimestre 2", "Trimestre 3"]);
       } else {
         await supabase.from("app_state").insert({
           id: "main",
@@ -190,7 +187,6 @@ export default function App() {
             classes: initClasses(), students: initStudents(), tranches: initTranches(), paiements: initPaiements(),
             staff: initStaff(), paieHist: initPaieHist(), depenses: initDepenses(), matieresConfig: initMatieres(),
             notes: initNotes(), materiels: initMateriels(), archives: {}, conduites: [], config: { devise: "GNF", etablissement: "GROUPE SCOLAIRE PRIVÉ CARMEL", etablissementAdresse: "", etablissementTels: "", etablissementEmail: "", ire: "", dpe: "", anneeScolaire: "2026-2027", bareme: 20, comptaPassword: "compta2026", logo: null },
-            periodes: ["Trimestre 1", "Trimestre 2", "Trimestre 3"],
           },
         });
       }
@@ -203,12 +199,12 @@ export default function App() {
     const t = setTimeout(() => {
       supabase.from("app_state").upsert({
         id: "main",
-        data: { classes, students, tranches, paiements, staff, paieHist, depenses, matieresConfig, notes, materiels, archives, conduites, config, periodes },
+        data: { classes, students, tranches, paiements, staff, paieHist, depenses, matieresConfig, notes, materiels, archives, conduites, config },
         updated_at: new Date().toISOString(),
       }).then();
     }, 800);
     return () => clearTimeout(t);
-  }, [classes, students, tranches, paiements, staff, paieHist, depenses, matieresConfig, notes, materiels, archives, conduites, config, periodes, session, dataLoaded]);
+  }, [classes, students, tranches, paiements, staff, paieHist, depenses, matieresConfig, notes, materiels, archives, conduites, config, session, dataLoaded]);
 
   const [comptaAuthed, setComptaAuthed] = useState(false);
   const [comptaPwd, setComptaPwd] = useState(""); const [comptaErr, setComptaErr] = useState(false);
@@ -221,6 +217,8 @@ export default function App() {
   /* ---- Classes ---- */
   const [nouvelleClasse, setNouvelleClasse] = useState("");
   const [classeSelectionnee, setClasseSelectionnee] = useState(null);
+  const [classeConfigOuverte, setClasseConfigOuverte] = useState(null);
+  const [nouvellePeriodeClasse, setNouvellePeriodeClasse] = useState("");
 
   /* ---- Bulletin ---- */
   const [bulClasse, setBulClasse] = useState("cl1");
@@ -279,38 +277,52 @@ export default function App() {
     reader.onload = () => setEleveForm(f => ({ ...f, photo: reader.result }));
     reader.readAsDataURL(file);
   };
-  const addClasse = () => { if (!nouvelleClasse.trim()) return; setClasses(prev => [...prev, { id: uid("cl"), nom: nouvelleClasse.trim(), montantAnnuel: 0 }]); setNouvelleClasse(""); };
+  const addClasse = () => { if (!nouvelleClasse.trim()) return; setClasses(prev => [...prev, { id: uid("cl"), nom: nouvelleClasse.trim(), montantAnnuel: 0, bareme: 20, periodes: ["Trimestre 1", "Trimestre 2", "Trimestre 3"] }]); setNouvelleClasse(""); };
   const renameClasse = (id, nom) => setClasses(prev => prev.map(c => c.id === id ? { ...c, nom } : c));
   const setMontantAnnuelClasse = (id, montant) => setClasses(prev => prev.map(c => c.id === id ? { ...c, montantAnnuel: montant } : c));
+  const setBaremeClasse = (id, bareme) => setClasses(prev => prev.map(c => c.id === id ? { ...c, bareme } : c));
+  const addPeriodeClasse = (id, nom) => { if (!nom.trim()) return; setClasses(prev => prev.map(c => c.id === id ? { ...c, periodes: [...(c.periodes || []), nom.trim()] } : c)); };
+  const renamePeriodeClasse = (id, index, val) => setClasses(prev => prev.map(c => c.id === id ? { ...c, periodes: (c.periodes || []).map((p, i) => i === index ? val : p) } : c));
+  const deletePeriodeClasse = (id, index) => setClasses(prev => prev.map(c => c.id === id ? { ...c, periodes: (c.periodes || []).filter((_, i) => i !== index) } : c));
   const appliquerChangementAnnee = () => {
     const nouvelle = anneeEnAttente;
     if (!nouvelle || nouvelle === config.anneeScolaire) { setAnneeEnAttente(null); return; }
     const anneeQuittee = config.anneeScolaire;
-    const donneesCibles = archives[nouvelle] || { notes: [], paiements: [], paieHist: [], depenses: [] };
-    setArchives(prev => ({ ...prev, [anneeQuittee]: { notes, paiements, paieHist, depenses } }));
+    const donneesCibles = archives[nouvelle] || { notes: [], paiements: [], paieHist: [], depenses: [], materiels: [] };
+    setArchives(prev => ({ ...prev, [anneeQuittee]: { notes, paiements, paieHist, depenses, materiels } }));
+
+    // Passage en classe supérieure selon la moyenne annuelle (admis) ou maintien (échec)
+    setStudents(prev => prev.map(s => {
+      const idx = classes.findIndex(c => c.id === s.classeId);
+      if (idx === -1) return s;
+      const cl = classes[idx];
+      const moy = moyenneEleve(s.id, s.classeId, "ANNUEL");
+      const admis = moy != null && (moy / (cl.bareme || 20) * 20) >= 10;
+      if (admis && classes[idx + 1]) return { ...s, classeId: classes[idx + 1].id };
+      return s;
+    }));
+
     setNotes(donneesCibles.notes || []);
     setPaiements(donneesCibles.paiements || []);
     setPaieHist(donneesCibles.paieHist || []);
     setDepenses(donneesCibles.depenses || []);
+    setMateriels(donneesCibles.materiels || []);
     setConfig(prev => ({ ...prev, anneeScolaire: nouvelle }));
     setAnneeEnAttente(null);
   };
   const deleteClasse = (id) => { setClasses(prev => prev.filter(c => c.id !== id)); if (classeSelectionnee === id) setClasseSelectionnee(null); };
-  const addPeriode = () => { if (!nouvellePeriode.trim()) return; setPeriodes(prev => [...prev, nouvellePeriode.trim()]); setNouvellePeriode(""); };
-  const renamePeriode = (i, val) => setPeriodes(prev => prev.map((p, idx) => idx === i ? val : p));
-  const deletePeriode = (i) => setPeriodes(prev => prev.filter((_, idx) => idx !== i));
 
   /* ---------- Actions Bulletin ---------- */
-  const saveMatiere = () => {
+  const saveMatiere = (classeId) => {
     if (!matiereForm.nom || !matiereForm.coef) return;
     setMatieresConfig(prev => {
-      const list = prev[bulClasse] || [];
+      const list = prev[classeId] || [];
       const updated = matiereForm.id ? list.map(m => m.id === matiereForm.id ? matiereForm : m) : [...list, { ...matiereForm, id: uid("mt") }];
-      return { ...prev, [bulClasse]: updated };
+      return { ...prev, [classeId]: updated };
     });
     setMatiereForm(null);
   };
-  const deleteMatiere = (id) => setMatieresConfig(prev => ({ ...prev, [bulClasse]: (prev[bulClasse] || []).filter(m => m.id !== id) }));
+  const deleteMatiere = (classeId, id) => setMatieresConfig(prev => ({ ...prev, [classeId]: (prev[classeId] || []).filter(m => m.id !== id) }));
   const setNote = (studentId, matiereId, trimestre, value) => {
     setNotes(prev => {
       const existing = prev.find(n => n.studentId === studentId && n.matiereId === matiereId && n.trimestre === trimestre);
@@ -329,7 +341,9 @@ export default function App() {
   };
   const noteDe = (studentId, matiereId, trimestre) => {
     if (trimestre === "ANNUEL") {
-      const vals = periodes.map(per => notes.find(n => n.studentId === studentId && n.matiereId === matiereId && n.trimestre === per)?.note).filter(v => v != null);
+      const classeIdEleve = students.find(s => s.id === studentId)?.classeId;
+      const periodesClasse = classes.find(c => c.id === classeIdEleve)?.periodes || [];
+      const vals = periodesClasse.map(per => notes.find(n => n.studentId === studentId && n.matiereId === matiereId && n.trimestre === per)?.note).filter(v => v != null);
       return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
     }
     return notes.find(n => n.studentId === studentId && n.matiereId === matiereId && n.trimestre === trimestre)?.note ?? null;
@@ -364,9 +378,10 @@ export default function App() {
     const meilleurs = classement.filter(x => x.moyenne > moy).length;
     return `${meilleurs + 1}${meilleurs === 0 ? "er" : "e"} / ${classement.length}`;
   };
-  const appreciationGenerale = (moy) => {
+  const appreciationGenerale = (moy, bareme = 20) => {
     if (moy == null) return "—";
-    return moy >= 16 ? "Très Bien" : moy >= 14 ? "Bien" : moy >= 12 ? "Assez Bien" : moy >= 10 ? "Passable" : "Insuffisant";
+    const r = moy / bareme * 20;
+    return r >= 16 ? "Très Bien" : r >= 14 ? "Bien" : r >= 12 ? "Assez Bien" : r >= 10 ? "Passable" : "Insuffisant";
   };
 
   /* ---------- Actions Comptabilité / Finance ---------- */
@@ -583,7 +598,7 @@ export default function App() {
 
         <Card>
           <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>Année scolaire</div>
-          <div style={{ fontSize: 11, color: C.textSoft, marginBottom: 10 }}>Chaque année scolaire garde ses propres notes, paiements, salaires et dépenses. Vous pouvez revenir sur une année passée à tout moment pour la revoir.</div>
+          <div style={{ fontSize: 11, color: C.textSoft, marginBottom: 10 }}>Chaque année scolaire garde ses propres notes, paiements, salaires, dépenses et matériels — vous pouvez revenir sur une année passée à tout moment. Au passage à la nouvelle année, chaque élève admis (moyenne annuelle ≥ 10/20) passe automatiquement dans la classe suivante ; les élèves en échec restent dans leur classe actuelle.</div>
           <Select value={anneeEnAttente || config.anneeScolaire} onChange={e => setAnneeEnAttente(e.target.value)}>
             {ANNEES_SCOLAIRES.map(a => <option key={a} value={a}>{a}</option>)}
           </Select>
@@ -603,7 +618,7 @@ export default function App() {
           )}
 
           <div style={{ marginTop: 12, padding: 10, background: C.paper, borderRadius: 8, fontSize: 11.5, color: C.textSoft }}>
-            Contenu actuel de <b style={{ color: C.text }}>{config.anneeScolaire}</b> : {notes.length} note(s) · {paiements.length} paiement(s) · {paieHist.length} salaire(s) versé(s) · {depenses.length} dépense(s)
+            Contenu actuel de <b style={{ color: C.text }}>{config.anneeScolaire}</b> : {notes.length} note(s) · {paiements.length} paiement(s) · {paieHist.length} salaire(s) versé(s) · {depenses.length} dépense(s) · {materiels.length} matériel(s)
           </div>
         </Card>
         <Card>
@@ -613,12 +628,60 @@ export default function App() {
             <Btn onClick={addClasse}><Plus size={13} /> Ajouter</Btn>
           </div>
           {classes.map(c => (
-            <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderTop: `1px solid ${C.line}` }}>
-              <Input value={c.nom} onChange={e => renameClasse(c.id, e.target.value)} style={{ flex: 1 }} />
-              <Input placeholder="Cycle (ex : Secondaire)" value={c.cycle || ""} onChange={e => setClasses(prev => prev.map(x => x.id === c.id ? { ...x, cycle: e.target.value } : x))} style={{ width: 150 }} />
-              <span style={{ fontSize: 11, color: C.textSoft }}>{classStats(c.id).total} élève(s)</span>
-              <Btn kind="ghost" onClick={() => setClasseSelectionnee(c.id)}>Voir la liste</Btn>
-              <button onClick={() => deleteClasse(c.id)} style={{ background: "none", border: "none", cursor: "pointer" }}><Trash2 size={14} color={C.rose} /></button>
+            <div key={c.id}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderTop: `1px solid ${C.line}`, flexWrap: "wrap" }}>
+                <Input value={c.nom} onChange={e => renameClasse(c.id, e.target.value)} style={{ flex: 1, minWidth: 140 }} />
+                <Input placeholder="Cycle (ex : Secondaire)" value={c.cycle || ""} onChange={e => setClasses(prev => prev.map(x => x.id === c.id ? { ...x, cycle: e.target.value } : x))} style={{ width: 150 }} />
+                <span style={{ fontSize: 11, color: C.textSoft }}>{classStats(c.id).total} élève(s)</span>
+                <Btn kind="ghost" onClick={() => setClasseConfigOuverte(classeConfigOuverte === c.id ? null : c.id)}>{classeConfigOuverte === c.id ? "Fermer" : "Configurer notes"}</Btn>
+                <Btn kind="ghost" onClick={() => setClasseSelectionnee(c.id)}>Voir la liste</Btn>
+                <button onClick={() => deleteClasse(c.id)} style={{ background: "none", border: "none", cursor: "pointer" }}><Trash2 size={14} color={C.rose} /></button>
+              </div>
+
+              {classeConfigOuverte === c.id && (
+                <div style={{ background: C.paper, borderRadius: 10, padding: 14, marginTop: 6, marginBottom: 10 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 16 }}>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 6 }}>Barème</div>
+                      <Input type="number" min="1" value={c.bareme || 20} onChange={e => setBaremeClasse(c.id, Number(e.target.value) || 20)} style={{ width: 100 }} />
+                      <div style={{ fontWeight: 700, fontSize: 12.5, margin: "14px 0 6px" }}>Trimestres / semestres</div>
+                      <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+                        <Input placeholder="Ex : Semestre 1" value={classeConfigOuverte === c.id ? nouvellePeriodeClasse : ""} onChange={e => setNouvellePeriodeClasse(e.target.value)}
+                          onKeyDown={e => { if (e.key === "Enter") { addPeriodeClasse(c.id, nouvellePeriodeClasse); setNouvellePeriodeClasse(""); } }} style={{ flex: 1 }} />
+                        <Btn onClick={() => { addPeriodeClasse(c.id, nouvellePeriodeClasse); setNouvellePeriodeClasse(""); }}><Plus size={13} /></Btn>
+                      </div>
+                      {(c.periodes || []).map((p, i) => (
+                        <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 0" }}>
+                          <Input value={p} onChange={e => renamePeriodeClasse(c.id, i, e.target.value)} style={{ flex: 1 }} />
+                          <button onClick={() => deletePeriodeClasse(c.id, i)} style={{ background: "none", border: "none", cursor: "pointer" }}><Trash2 size={13} color={C.rose} /></button>
+                        </div>
+                      ))}
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 6 }}>Matières & coefficients</div>
+                      <Btn onClick={() => setMatiereForm({ nom: "", coef: 1 })} style={{ marginBottom: 8 }}><Plus size={13} /> Ajouter une matière</Btn>
+                      {matiereForm && (
+                        <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
+                          <Input placeholder="Nom de la matière" value={matiereForm.nom} onChange={e => setMatiereForm({ ...matiereForm, nom: e.target.value })} />
+                          <Input type="number" min="1" placeholder="Coefficient" value={matiereForm.coef} onChange={e => setMatiereForm({ ...matiereForm, coef: e.target.value })} style={{ width: 100 }} />
+                          <Btn onClick={() => saveMatiere(c.id)}><Check size={13} /></Btn>
+                          <Btn kind="ghost" onClick={() => setMatiereForm(null)}><X size={13} /></Btn>
+                        </div>
+                      )}
+                      {(matieresConfig[c.id] || []).map(m => (
+                        <div key={m.id} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderTop: `1px solid ${C.line}` }}>
+                          <div>{m.nom} <span className="f-mono" style={{ color: C.textSoft, fontSize: 11 }}>coef {m.coef}</span></div>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            <button onClick={() => setMatiereForm(m)} style={{ background: "none", border: "none", cursor: "pointer" }}><Pencil size={13} color={C.textSoft} /></button>
+                            <button onClick={() => deleteMatiere(c.id, m.id)} style={{ background: "none", border: "none", cursor: "pointer" }}><Trash2 size={13} color={C.rose} /></button>
+                          </div>
+                        </div>
+                      ))}
+                      {!(matieresConfig[c.id] || []).length && <div style={{ fontSize: 11.5, color: C.textSoft }}>Aucune matière configurée.</div>}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </Card>
@@ -644,6 +707,8 @@ export default function App() {
   /* ----- Saisie de notes (tableau classe entière) ----- */
   const renderSaisie = () => {
     const matieres = matieresConfig[saisieClasse] || [];
+    const classeSaisie = classes.find(c => c.id === saisieClasse);
+    const periodesClasse = classeSaisie?.periodes || [];
     const eleves = students.filter(s => s.classeId === saisieClasse).sort((a, b) => a.nom.localeCompare(b.nom));
     const noteOf = (studentId, matiereId) => notes.find(n => n.studentId === studentId && n.matiereId === matiereId && n.trimestre === saisieTrimestre)?.note ?? null;
 
@@ -654,8 +719,8 @@ export default function App() {
 
         <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <Select value={saisieClasse} onChange={e => setSaisieClasse(e.target.value)}>{classes.map(c => <option key={c.id} value={c.id}>{c.nom}</option>)}</Select>
-            <Select value={saisieTrimestre} onChange={e => setSaisieTrimestre(e.target.value)}>{periodes.map(t => <option key={t} value={t}>{t}</option>)}</Select>
+            <Select value={saisieClasse} onChange={e => { setSaisieClasse(e.target.value); setSaisieTrimestre(classes.find(c => c.id === e.target.value)?.periodes?.[0] || ""); }}>{classes.map(c => <option key={c.id} value={c.id}>{c.nom}</option>)}</Select>
+            <Select value={saisieTrimestre} onChange={e => setSaisieTrimestre(e.target.value)}>{periodesClasse.map(t => <option key={t} value={t}>{t}</option>)}</Select>
           </div>
           <Btn kind="ghost" onClick={() => exportCSV(
             `notes-${classes.find(c => c.id === saisieClasse)?.nom}-${saisieTrimestre}.csv`,
@@ -683,7 +748,7 @@ export default function App() {
                     <td style={{ padding: "7px 10px", fontWeight: 600, whiteSpace: "nowrap", border: `1px solid ${C.line}` }}>{s.prenoms} {s.nom}<div className="f-mono" style={{ fontWeight: 400, fontSize: 10.5, color: C.textSoft }}>Matricule : {s.matricule}</div></td>
                     {matieres.map(m => (
                       <td key={m.id} style={{ padding: "6px 10px", textAlign: "center", border: `1px solid ${C.line}` }}>
-                        <input type="number" min="0" max={config.bareme} step="0.5" value={noteOf(s.id, m.id) ?? ""} placeholder="—"
+                        <input type="number" min="0" max={classeSaisie?.bareme || 20} step="0.5" value={noteOf(s.id, m.id) ?? ""} placeholder="—"
                           onChange={e => setNote(s.id, m.id, saisieTrimestre, e.target.value)}
                           style={{ width: 56, textAlign: "center", padding: "4px 6px", borderRadius: 6, border: `1px solid ${C.line}`, fontSize: 12.5 }} />
                       </td>
@@ -779,6 +844,10 @@ export default function App() {
     const eleve = students.find(s => s.id === studentId);
     if (!eleve) return null;
     const classeId = eleve.classeId;
+    const classeEleve = classes.find(c => c.id === classeId);
+    const bareme = classeEleve?.bareme || 20;
+    const periodesClasse = classeEleve?.periodes || [];
+    const estAnnuel = bulTrimestre === "ANNUEL";
     const matieres = matieresConfig[classeId] || [];
     const noteOf = (matiereId) => noteDe(studentId, matiereId, bulTrimestre);
     let sommeCoef = 0, sommePondere = 0;
@@ -804,13 +873,13 @@ export default function App() {
           </div>
         </div>
 
-        <div className="f-display" style={{ textAlign: "center", fontWeight: 700, fontSize: 17, color: C.text, margin: "14px 0 2px", textTransform: "uppercase" }}>Bulletin de notes — {bulTrimestre === "ANNUEL" ? "Annuel" : bulTrimestre}</div>
+        <div className="f-display" style={{ textAlign: "center", fontWeight: 700, fontSize: 17, color: C.text, margin: "14px 0 2px", textTransform: "uppercase" }}>Bulletin de notes — {estAnnuel ? "Annuel" : bulTrimestre}</div>
         {config.anneeScolaire && <div style={{ textAlign: "center", fontSize: 12, fontWeight: 700, marginBottom: 12 }}>Année Scolaire : {config.anneeScolaire}</div>}
 
         <div style={{ border: `1px solid ${C.text}`, padding: 10, marginBottom: 12, fontSize: 12.5 }}>
           <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 6 }}>
             <span><b>NOM ET PRÉNOMS :</b> {eleve.nom} {eleve.prenoms}</span>
-            <span><b>CLASSE :</b> {classes.find(c => c.id === classeId)?.nom}</span>
+            <span><b>CLASSE :</b> {classeEleve?.nom}</span>
           </div>
           <div style={{ marginTop: 4 }}><b>MATRICULE :</b> <span className="f-mono">{eleve.matricule}</span></div>
           <div style={{ marginTop: 4 }}><b>DATE ET LIEU DE NAISSANCE :</b> {eleve.naissance}{eleve.lieuNaissance ? ` à ${eleve.lieuNaissance}` : ""}</div>
@@ -818,8 +887,8 @@ export default function App() {
 
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, border: `1px solid ${C.text}` }}>
           <thead><tr>
-            {["Matière", "Moy", "Coeff", "Moy Coeff", "Rang", "Appréciation"].map(h => (
-              <th key={h} style={{ background: C.ink, color: "#fff", padding: "7px 8px", textAlign: h === "Matière" || h === "Appréciation" ? "left" : "center", fontSize: 11, textTransform: "uppercase", border: `1px solid ${C.ink}` }}>{h}</th>
+            {["Matière", ...(estAnnuel ? periodesClasse : []), estAnnuel ? "Moyenne" : "Moy", "Coeff", "Moy Coeff", "Rang", "Appréciation"].map((h, i) => (
+              <th key={h + i} style={{ background: C.ink, color: "#fff", padding: "7px 8px", textAlign: (i === 0 || h === "Appréciation") ? "left" : "center", fontSize: 11, textTransform: "uppercase", border: `1px solid ${C.ink}` }}>{h}</th>
             ))}
           </tr></thead>
           <tbody>
@@ -828,22 +897,27 @@ export default function App() {
               return (
                 <tr key={m.id}>
                   <td style={{ padding: "6px 8px", fontWeight: 600, border: `1px solid ${C.line}` }}>{m.nom}</td>
+                  {estAnnuel && periodesClasse.map(per => {
+                    const val = notes.find(x => x.studentId === studentId && x.matiereId === m.id && x.trimestre === per)?.note;
+                    return <td key={per} className="f-mono" style={{ padding: "6px 8px", textAlign: "center", border: `1px solid ${C.line}`, color: C.textSoft }}>{val != null ? val : "—"}</td>;
+                  })}
                   <td style={{ padding: "6px 8px", textAlign: "center", border: `1px solid ${C.line}` }}>
-                    {bulTrimestre === "ANNUEL"
-                      ? <span className="f-mono">{n != null ? n.toFixed(1).replace(/\.0$/, "") : "—"}</span>
-                      : <input type="number" min="0" max={config.bareme} step="0.5" value={n ?? ""} placeholder="—"
+                    {estAnnuel
+                      ? <span className="f-mono" style={{ fontWeight: 700 }}>{n != null ? n.toFixed(1).replace(/\.0$/, "") : "—"}</span>
+                      : <input type="number" min="0" max={bareme} step="0.5" value={n ?? ""} placeholder="—"
                           onChange={e => setNote(studentId, m.id, bulTrimestre, e.target.value)}
                           style={{ width: 50, textAlign: "center", padding: "3px 4px", borderRadius: 6, border: `1px solid ${C.line}`, fontSize: 12.5 }} />}
                   </td>
                   <td className="f-mono" style={{ padding: "6px 8px", textAlign: "center", border: `1px solid ${C.line}` }}>{m.coef}</td>
                   <td className="f-mono" style={{ padding: "6px 8px", textAlign: "center", border: `1px solid ${C.line}` }}>{n != null ? (n * m.coef).toFixed(1).replace(/\.0$/, "") : "—"}</td>
                   <td style={{ padding: "6px 8px", textAlign: "center", border: `1px solid ${C.line}` }}>{rangMatiere(m.id, bulTrimestre, studentId)}</td>
-                  <td style={{ padding: "6px 8px", border: `1px solid ${C.line}` }}>{mention(n)}</td>
+                  <td style={{ padding: "6px 8px", border: `1px solid ${C.line}` }}>{mention(n, bareme)}</td>
                 </tr>
               );
             })}
             <tr style={{ background: C.ink, color: "#fff", fontWeight: 700 }}>
               <td style={{ padding: "7px 8px", border: `1px solid ${C.ink}` }}>TOTAL</td>
+              {estAnnuel && periodesClasse.map(per => <td key={per} style={{ border: `1px solid ${C.ink}` }}></td>)}
               <td style={{ border: `1px solid ${C.ink}` }}></td>
               <td className="f-mono" style={{ padding: "7px 8px", textAlign: "center", border: `1px solid ${C.ink}` }}>{sommeCoef}</td>
               <td className="f-mono" style={{ padding: "7px 8px", textAlign: "center", border: `1px solid ${C.ink}` }}>{sommePondere.toFixed(1).replace(/\.0$/, "")}</td>
@@ -855,11 +929,11 @@ export default function App() {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, marginTop: 10 }}>
           <tbody><tr>
             <td style={{ background: C.ink, color: "#fff", fontWeight: 700, padding: "8px 10px" }}>MOYENNE</td>
-            <td className="f-mono" style={{ padding: "8px 10px", border: `1px solid ${C.line}`, fontWeight: 700 }}>{moyenne != null ? moyenne.toFixed(2) : "—"} / {config.bareme}</td>
+            <td className="f-mono" style={{ padding: "8px 10px", border: `1px solid ${C.line}`, fontWeight: 700 }}>{moyenne != null ? moyenne.toFixed(2) : "—"} / {bareme}</td>
             <td style={{ background: C.ink, color: "#fff", fontWeight: 700, padding: "8px 10px" }}>RANG</td>
             <td className="f-mono" style={{ padding: "8px 10px", border: `1px solid ${C.line}`, fontWeight: 700 }}>{rangGeneral(studentId, classeId, bulTrimestre)}</td>
             <td style={{ background: C.ink, color: "#fff", fontWeight: 700, padding: "8px 10px" }}>APPRÉCIATION</td>
-            <td style={{ padding: "8px 10px", border: `1px solid ${C.line}`, fontWeight: 700 }}>{appreciationGenerale(moyenne)}</td>
+            <td style={{ padding: "8px 10px", border: `1px solid ${C.line}`, fontWeight: 700 }}>{appreciationGenerale(moyenne, bareme)}</td>
           </tr></tbody>
         </table>
 
@@ -903,26 +977,28 @@ export default function App() {
     if (printAllView) return renderImpressionTousBulletins();
 
     const matieres = matieresConfig[bulClasse] || [];
+    const classeBul = classes.find(c => c.id === bulClasse);
+    const periodesClasse = classeBul?.periodes || [];
     const classeEleves = students.filter(s => s.classeId === bulClasse);
     const classement = classementClasse(bulClasse, bulTrimestre);
 
     return (
       <div>
         <div className="f-display" style={{ fontSize: 22, color: C.text, fontWeight: 600, marginBottom: 4 }}>Bulletin — configuration du responsable</div>
-        <div style={{ color: C.textSoft, fontSize: 13, marginBottom: 16 }}>Bulletin par trimestre, calculé automatiquement à partir des matières et coefficients configurés.</div>
+        <div style={{ color: C.textSoft, fontSize: 13, marginBottom: 16 }}>Bulletin par trimestre, calculé automatiquement à partir des matières et coefficients configurés pour chaque classe (menu Classes).</div>
 
         <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
-          <Select value={bulClasse} onChange={e => { setBulClasse(e.target.value); setBulEleve(""); }}>{classes.map(c => <option key={c.id} value={c.id}>{c.nom}</option>)}</Select>
+          <Select value={bulClasse} onChange={e => { setBulClasse(e.target.value); setBulEleve(""); setBulTrimestre(classes.find(c => c.id === e.target.value)?.periodes?.[0] || "ANNUEL"); }}>{classes.map(c => <option key={c.id} value={c.id}>{c.nom}</option>)}</Select>
           <Select value={bulTrimestre} onChange={e => setBulTrimestre(e.target.value)}>
-            {periodes.map(t => <option key={t} value={t}>{t}</option>)}
+            {periodesClasse.map(t => <option key={t} value={t}>{t}</option>)}
             <option value="ANNUEL">Bulletin annuel (moyenne des périodes)</option>
           </Select>
           <Select value={bulEleve} onChange={e => setBulEleve(e.target.value)}><option value="">Voir un bulletin individuel…</option>{classeEleves.map(s => <option key={s.id} value={s.id}>{nomMat(s)}</option>)}</Select>
         </div>
 
         <Card className="no-print">
-          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10 }}>Configuration du bulletin</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10 }}>Configuration de l'établissement</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 4 }}>
             <div>
               <div style={{ fontSize: 11, color: C.textSoft, marginBottom: 4 }}>Nom de l'établissement</div>
               <Input value={config.etablissement} onChange={e => setConfig({ ...config, etablissement: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
@@ -952,46 +1028,8 @@ export default function App() {
               <div style={{ fontSize: 11, color: C.textSoft, marginBottom: 4 }}>DPE</div>
               <Input value={config.dpe} onChange={e => setConfig({ ...config, dpe: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
             </div>
-            <div>
-              <div style={{ fontSize: 11, color: C.textSoft, marginBottom: 4 }}>Barème (note sur…)</div>
-              <Input type="number" min="1" value={config.bareme} onChange={e => setConfig({ ...config, bareme: Number(e.target.value) || 20 })} style={{ width: "100%", boxSizing: "border-box" }} />
-            </div>
           </div>
-          <div style={{ fontSize: 11, color: C.textSoft, marginBottom: 6 }}>Périodes (trimestres/semestres — à volonté)</div>
-          <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-            <Input placeholder="Nouvelle période (ex : Semestre 1)" value={nouvellePeriode} onChange={e => setNouvellePeriode(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && addPeriode()} style={{ flex: 1 }} />
-            <Btn onClick={addPeriode}><Plus size={13} /></Btn>
-          </div>
-          {periodes.map((p, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }}>
-              <Input value={p} onChange={e => renamePeriode(i, e.target.value)} style={{ flex: 1 }} />
-              <button onClick={() => deletePeriode(i)} style={{ background: "none", border: "none", cursor: "pointer" }}><Trash2 size={14} color={C.rose} /></button>
-            </div>
-          ))}
-        </Card>
-
-        <Card className="no-print">
-          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10 }}>Matières & coefficients — {classes.find(c => c.id === bulClasse)?.nom}</div>
-          <Btn onClick={() => setMatiereForm({ nom: "", coef: 1 })} style={{ marginBottom: 10 }}><Plus size={13} /> Ajouter une matière</Btn>
-          {matiereForm && (
-            <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
-              <Input placeholder="Nom de la matière" value={matiereForm.nom} onChange={e => setMatiereForm({ ...matiereForm, nom: e.target.value })} />
-              <Input type="number" min="1" placeholder="Coefficient" value={matiereForm.coef} onChange={e => setMatiereForm({ ...matiereForm, coef: e.target.value })} style={{ width: 110 }} />
-              <Btn onClick={saveMatiere}><Check size={13} /></Btn>
-              <Btn kind="ghost" onClick={() => setMatiereForm(null)}><X size={13} /></Btn>
-            </div>
-          )}
-          {matieres.map(m => (
-            <div key={m.id} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderTop: `1px solid ${C.line}` }}>
-              <div>{m.nom} <span className="f-mono" style={{ color: C.textSoft, fontSize: 11 }}>coef {m.coef}</span></div>
-              <div style={{ display: "flex", gap: 6 }}>
-                <button onClick={() => setMatiereForm(m)} style={{ background: "none", border: "none", cursor: "pointer" }}><Pencil size={14} color={C.textSoft} /></button>
-                <button onClick={() => deleteMatiere(m.id)} style={{ background: "none", border: "none", cursor: "pointer" }}><Trash2 size={14} color={C.rose} /></button>
-              </div>
-            </div>
-          ))}
-          {!matieres.length && <div style={{ fontSize: 12, color: C.textSoft }}>Aucune matière configurée pour cette classe.</div>}
+          <div style={{ fontSize: 10.5, color: C.textSoft, marginTop: 10 }}>Le barème, les matières/coefficients et les trimestres/semestres de chaque classe se configurent désormais dans le menu <b>Classes</b> (bouton "Configurer notes").</div>
         </Card>
 
         <Card className="no-print">
@@ -1007,7 +1045,7 @@ export default function App() {
                   <Td style={{ fontWeight: 700 }}>{i + 1}{i === 0 ? "er" : "e"}</Td>
                   <Td style={{ fontWeight: 600 }}>{c.student.prenoms} {c.student.nom}<div className="f-mono" style={{ fontWeight: 400, fontSize: 10.5, color: C.textSoft }}>Matricule : {c.student.matricule}</div></Td>
                   <Td className="f-mono">{c.moyenne != null ? c.moyenne.toFixed(2) : "—"}</Td>
-                  <Td><Pill_ text={mention(c.moyenne)} color={c.moyenne >= 12 ? C.sage : c.moyenne >= 10 ? C.brass : C.rose} bg={c.moyenne >= 12 ? C.sageSoft : c.moyenne >= 10 ? C.brassSoft : C.roseSoft} /></Td>
+                  <Td><Pill_ text={mention(c.moyenne, classeBul?.bareme || 20)} color={c.moyenne >= 12 ? C.sage : c.moyenne >= 10 ? C.brass : C.rose} bg={c.moyenne >= 12 ? C.sageSoft : c.moyenne >= 10 ? C.brassSoft : C.roseSoft} /></Td>
                 </tr>
               ))}
               {!classement.length && <tr><Td style={{ textAlign: "center", color: C.textSoft }} colSpan={4}>Aucun élève dans cette classe.</Td></tr>}
