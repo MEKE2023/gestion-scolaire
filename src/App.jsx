@@ -229,7 +229,6 @@ export default function App() {
 
   /* ---- Saisie de notes ---- */
   const [saisieClasse, setSaisieClasse] = useState("cl1");
-  const [saisieTrimestre, setSaisieTrimestre] = useState("Trimestre 1");
 
   /* ---- Matériels didactiques ---- */
   const [materielForm, setMaterielForm] = useState(null);
@@ -282,8 +281,24 @@ export default function App() {
   const setMontantAnnuelClasse = (id, montant) => setClasses(prev => prev.map(c => c.id === id ? { ...c, montantAnnuel: montant } : c));
   const setBaremeClasse = (id, bareme) => setClasses(prev => prev.map(c => c.id === id ? { ...c, bareme } : c));
   const addPeriodeClasse = (id, nom) => { if (!nom.trim()) return; setClasses(prev => prev.map(c => c.id === id ? { ...c, periodes: [...(c.periodes || []), nom.trim()] } : c)); };
-  const renamePeriodeClasse = (id, index, val) => setClasses(prev => prev.map(c => c.id === id ? { ...c, periodes: (c.periodes || []).map((p, i) => i === index ? val : p) } : c));
-  const deletePeriodeClasse = (id, index) => setClasses(prev => prev.map(c => c.id === id ? { ...c, periodes: (c.periodes || []).filter((_, i) => i !== index) } : c));
+  const renamePeriodeClasse = (id, index, val) => {
+    const cl = classes.find(c => c.id === id);
+    const ancien = cl?.periodes?.[index];
+    setClasses(prev => prev.map(c => c.id === id ? { ...c, periodes: (c.periodes || []).map((p, i) => i === index ? val : p) } : c));
+    if (ancien && ancien !== val) {
+      const idsEleves = new Set(students.filter(s => s.classeId === id).map(s => s.id));
+      setNotes(prev => prev.map(n => (idsEleves.has(n.studentId) && n.trimestre === ancien) ? { ...n, trimestre: val } : n));
+      setConduites(prev => prev.map(cd => (idsEleves.has(cd.studentId) && cd.trimestre === ancien) ? { ...cd, trimestre: val } : cd));
+    }
+  };
+  const deletePeriodeClasse = (id, index) => {
+    const cl = classes.find(c => c.id === id);
+    const nom = cl?.periodes?.[index];
+    const idsEleves = new Set(students.filter(s => s.classeId === id).map(s => s.id));
+    const aDesNotes = nom && notes.some(n => idsEleves.has(n.studentId) && n.trimestre === nom);
+    if (aDesNotes && !window.confirm(`Des notes existent déjà pour "${nom}". Les supprimer de la liste des périodes les rendra inaccessibles (elles ne seront pas effacées, mais invisibles tant que "${nom}" n'est pas recréée à l'identique). Continuer ?`)) return;
+    setClasses(prev => prev.map(c => c.id === id ? { ...c, periodes: (c.periodes || []).filter((_, i) => i !== index) } : c));
+  };
   const appliquerChangementAnnee = () => {
     const nouvelle = anneeEnAttente;
     if (!nouvelle || nouvelle === config.anneeScolaire) { setAnneeEnAttente(null); return; }
@@ -710,52 +725,58 @@ export default function App() {
     const classeSaisie = classes.find(c => c.id === saisieClasse);
     const periodesClasse = classeSaisie?.periodes || [];
     const eleves = students.filter(s => s.classeId === saisieClasse).sort((a, b) => a.nom.localeCompare(b.nom));
-    const noteOf = (studentId, matiereId) => notes.find(n => n.studentId === studentId && n.matiereId === matiereId && n.trimestre === saisieTrimestre)?.note ?? null;
+    const noteA = (studentId, matiereId, periode) => notes.find(n => n.studentId === studentId && n.matiereId === matiereId && n.trimestre === periode)?.note ?? null;
 
     return (
       <div>
         <div className="f-display" style={{ fontSize: 22, color: C.text, fontWeight: 600, marginBottom: 4 }}>Saisie de notes</div>
-        <div style={{ color: C.textSoft, fontSize: 13, marginBottom: 16 }}>Sélectionnez une classe : tous les élèves et toutes les matières apparaissent dans un seul tableau.</div>
+        <div style={{ color: C.textSoft, fontSize: 13, marginBottom: 16 }}>Sélectionnez une classe : chaque matière affiche une case par trimestre/semestre, toutes visibles en même temps — rien ne disparaît quand vous changez de période.</div>
 
         <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <Select value={saisieClasse} onChange={e => { setSaisieClasse(e.target.value); setSaisieTrimestre(classes.find(c => c.id === e.target.value)?.periodes?.[0] || ""); }}>{classes.map(c => <option key={c.id} value={c.id}>{c.nom}</option>)}</Select>
-            <Select value={saisieTrimestre} onChange={e => setSaisieTrimestre(e.target.value)}>{periodesClasse.map(t => <option key={t} value={t}>{t}</option>)}</Select>
-          </div>
+          <Select value={saisieClasse} onChange={e => setSaisieClasse(e.target.value)}>{classes.map(c => <option key={c.id} value={c.id}>{c.nom}</option>)}</Select>
           <Btn kind="ghost" onClick={() => exportCSV(
-            `notes-${classes.find(c => c.id === saisieClasse)?.nom}-${saisieTrimestre}.csv`,
-            ["Nom", "Matricule", ...matieres.map(m => m.nom)],
-            eleves.map(s => [`${s.prenoms} ${s.nom}`, s.matricule, ...matieres.map(m => noteOf(s.id, m.id) ?? "")])
+            `notes-${classes.find(c => c.id === saisieClasse)?.nom}.csv`,
+            ["Nom", "Matricule", ...matieres.flatMap(m => periodesClasse.map(p => `${m.nom} — ${p}`))],
+            eleves.map(s => [`${s.prenoms} ${s.nom}`, s.matricule, ...matieres.flatMap(m => periodesClasse.map(p => noteA(s.id, m.id, p) ?? ""))])
           )}><Download size={13} /> Exporter vers Excel</Btn>
         </div>
 
         {!matieres.length ? (
-          <Card><div style={{ fontSize: 12, color: C.textSoft }}>Aucune matière configurée pour cette classe. Rendez-vous dans le menu <b>Bulletin</b> pour ajouter les matières et coefficients de cette classe.</div></Card>
+          <Card><div style={{ fontSize: 12, color: C.textSoft }}>Aucune matière configurée pour cette classe. Rendez-vous dans le menu <b>Classes</b> (bouton "Configurer notes") pour ajouter les matières et coefficients de cette classe.</div></Card>
+        ) : !periodesClasse.length ? (
+          <Card><div style={{ fontSize: 12, color: C.textSoft }}>Aucune période (trimestre/semestre) configurée pour cette classe. Rendez-vous dans le menu <b>Classes</b> pour en ajouter.</div></Card>
         ) : (
           <Card style={{ padding: 0, overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, border: `1px solid ${C.text}` }}>
-              <thead><tr>
-                <th style={{ background: C.ink, color: "#fff", padding: "8px 10px", textAlign: "left", fontSize: 11, textTransform: "uppercase", border: `1px solid ${C.ink}` }}>Élève</th>
-                {matieres.map(m => (
-                  <th key={m.id} style={{ background: C.ink, color: "#fff", padding: "8px 10px", textAlign: "center", fontSize: 11, textTransform: "uppercase", border: `1px solid ${C.ink}` }}>
-                    {m.nom}<div style={{ fontWeight: 400, fontSize: 9.5, opacity: 0.85, textTransform: "none" }}>coef {m.coef}</div>
-                  </th>
-                ))}
-              </tr></thead>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, border: `1px solid ${C.text}` }}>
+              <thead>
+                <tr>
+                  <th rowSpan={2} style={{ background: C.ink, color: "#fff", padding: "8px 10px", textAlign: "left", fontSize: 11, textTransform: "uppercase", border: `1px solid ${C.ink}`, verticalAlign: "bottom" }}>Élève</th>
+                  {matieres.map(m => (
+                    <th key={m.id} colSpan={periodesClasse.length} style={{ background: C.ink, color: "#fff", padding: "6px 8px", textAlign: "center", fontSize: 11, textTransform: "uppercase", border: `1px solid ${C.ink}` }}>
+                      {m.nom} <span style={{ fontWeight: 400, opacity: 0.85 }}>(coef {m.coef})</span>
+                    </th>
+                  ))}
+                </tr>
+                <tr>
+                  {matieres.map(m => periodesClasse.map(p => (
+                    <th key={m.id + p} style={{ background: C.inkDeep, color: "#fff", padding: "5px 6px", textAlign: "center", fontSize: 9.5, fontWeight: 500, border: `1px solid ${C.ink}` }}>{p}</th>
+                  )))}
+                </tr>
+              </thead>
               <tbody>
                 {eleves.map((s, i) => (
                   <tr key={s.id} style={{ background: i % 2 ? C.paper : "#fff" }}>
                     <td style={{ padding: "7px 10px", fontWeight: 600, whiteSpace: "nowrap", border: `1px solid ${C.line}` }}>{s.prenoms} {s.nom}<div className="f-mono" style={{ fontWeight: 400, fontSize: 10.5, color: C.textSoft }}>Matricule : {s.matricule}</div></td>
-                    {matieres.map(m => (
-                      <td key={m.id} style={{ padding: "6px 10px", textAlign: "center", border: `1px solid ${C.line}` }}>
-                        <input type="number" min="0" max={classeSaisie?.bareme || 20} step="0.5" value={noteOf(s.id, m.id) ?? ""} placeholder="—"
-                          onChange={e => setNote(s.id, m.id, saisieTrimestre, e.target.value)}
-                          style={{ width: 56, textAlign: "center", padding: "4px 6px", borderRadius: 6, border: `1px solid ${C.line}`, fontSize: 12.5 }} />
+                    {matieres.map(m => periodesClasse.map(p => (
+                      <td key={m.id + p} style={{ padding: "4px 5px", textAlign: "center", border: `1px solid ${C.line}` }}>
+                        <input type="number" min="0" max={classeSaisie?.bareme || 20} step="0.5" value={noteA(s.id, m.id, p) ?? ""} placeholder="—"
+                          onChange={e => setNote(s.id, m.id, p, e.target.value)}
+                          style={{ width: 42, textAlign: "center", padding: "3px 2px", borderRadius: 5, border: `1px solid ${C.line}`, fontSize: 11.5 }} />
                       </td>
-                    ))}
+                    )))}
                   </tr>
                 ))}
-                {!eleves.length && <tr><td style={{ textAlign: "center", color: C.textSoft, padding: "10px", border: `1px solid ${C.line}` }} colSpan={matieres.length + 1}>Aucun élève dans cette classe.</td></tr>}
+                {!eleves.length && <tr><td style={{ textAlign: "center", color: C.textSoft, padding: "10px", border: `1px solid ${C.line}` }} colSpan={matieres.length * periodesClasse.length + 1}>Aucun élève dans cette classe.</td></tr>}
               </tbody>
             </table>
           </Card>
