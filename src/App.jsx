@@ -137,12 +137,12 @@ export default function App() {
 
   const [classes, setClasses] = useState(initClasses());
   const [students, setStudents] = useState(initStudents());
-  const [tranches, setTranches] = useState(initTranches());
   const [paiements, setPaiements] = useState(initPaiements());
   const [staff, setStaff] = useState(initStaff());
   const [paieHist, setPaieHist] = useState(initPaieHist());
   const [depenses, setDepenses] = useState(initDepenses());
   const [matieresConfig, setMatieresConfig] = useState(initMatieres());
+  const [tranchesEcole, setTranchesEcole] = useState(initTranches());
   const [configNiveaux, setConfigNiveaux] = useState({});
   const [notes, setNotes] = useState(initNotes());
   const [materiels, setMateriels] = useState(initMateriels());
@@ -173,12 +173,12 @@ export default function App() {
         const d = data.data;
         setClasses(d.classes || initClasses());
         setStudents(d.students || initStudents());
-        setTranches(d.tranches || initTranches());
         setPaiements(d.paiements || initPaiements());
         setStaff(d.staff || initStaff());
         setPaieHist(d.paieHist || initPaieHist());
         setDepenses(d.depenses || initDepenses());
         setMatieresConfig(d.matieresConfig || initMatieres());
+        setTranchesEcole(d.tranchesEcole || initTranches());
         setConfigNiveaux(d.configNiveaux || {});
         setNotes(d.notes || initNotes());
         setMateriels(d.materiels || initMateriels());
@@ -195,8 +195,8 @@ export default function App() {
         await supabase.from("app_state").insert({
           id: "main",
           data: {
-            classes: initClasses(), students: initStudents(), tranches: initTranches(), paiements: initPaiements(),
-            staff: initStaff(), paieHist: initPaieHist(), depenses: initDepenses(), matieresConfig: initMatieres(),
+            classes: initClasses(), students: initStudents(), paiements: initPaiements(),
+            staff: initStaff(), paieHist: initPaieHist(), depenses: initDepenses(), matieresConfig: initMatieres(), tranchesEcole: initTranches(),
             notes: initNotes(), materiels: initMateriels(), archives: {}, conduites: [], configNiveaux: {}, config: { devise: "GNF", etablissement: "GROUPE SCOLAIRE PRIVÉ CARMEL", etablissementAdresse: "", etablissementTels: "", etablissementEmail: "", ire: "", dpe: "", anneeScolaire: "2026-2027", bareme: 20, comptaPassword: "compta2026", logo: null },
           },
         });
@@ -210,12 +210,12 @@ export default function App() {
     const t = setTimeout(() => {
       supabase.from("app_state").upsert({
         id: "main",
-        data: { classes, students, tranches, paiements, staff, paieHist, depenses, matieresConfig, configNiveaux, notes, materiels, archives, conduites, config },
+        data: { classes, students, paiements, staff, paieHist, depenses, matieresConfig, configNiveaux, tranchesEcole, notes, materiels, archives, conduites, config },
         updated_at: new Date().toISOString(),
       }).then();
     }, 800);
     return () => clearTimeout(t);
-  }, [classes, students, tranches, paiements, staff, paieHist, depenses, matieresConfig, configNiveaux, notes, materiels, archives, conduites, config, session, dataLoaded]);
+  }, [classes, students, paiements, staff, paieHist, depenses, matieresConfig, configNiveaux, tranchesEcole, notes, materiels, archives, conduites, config, session, dataLoaded]);
 
 
   /* ---- Élèves ---- */
@@ -229,6 +229,7 @@ export default function App() {
   const [classeSelectionnee, setClasseSelectionnee] = useState(null);
   const [niveauConfigOuvert, setNiveauConfigOuvert] = useState(null);
   const [nouvellePeriodeNiveau, setNouvellePeriodeNiveau] = useState("");
+  const [nouvelleTrancheNiveau, setNouvelleTrancheNiveau] = useState("");
 
   /* ---- Bulletin ---- */
   const [bulClasse, setBulClasse] = useState("cl1");
@@ -252,12 +253,13 @@ export default function App() {
 
   /* ---- Comptabilité (+ Finance + Statistiques, sous contrôle du comptable) ---- */
   const [compTab, setCompTab] = useState("effectifs");
-  const [trancheForm, setTrancheForm] = useState(null);
   const [paieClasseFiltre, setPaieClasseFiltre] = useState("");
   const [paieForm, setPaieForm] = useState({ studentId: "", trancheId: "", montant: "", mode: "Espèces" });
   const [recuId, setRecuId] = useState(null);
   const [staffForm, setStaffForm] = useState(null);
   const [paieAnnee, setPaieAnnee] = useState(new Date().getFullYear());
+  const [rapportMoisIndex, setRapportMoisIndex] = useState(new Date().getMonth());
+  const [rapportMoisAnnee, setRapportMoisAnnee] = useState(new Date().getFullYear());
   const [depForm, setDepForm] = useState({ categorie: "", montant: "", description: "" });
   const [suiviClasse, setSuiviClasse] = useState("cl1");
   const [suiviSort, setSuiviSort] = useState({ champ: "nom", dir: 1 });
@@ -451,15 +453,24 @@ export default function App() {
   };
 
   /* ---------- Actions Comptabilité / Finance ---------- */
-  const saveTranche = () => {
-    if (!trancheForm.nom) return;
-    if (trancheForm.id) setTranches(prev => prev.map(t => t.id === trancheForm.id ? trancheForm : t));
-    else setTranches(prev => [...prev, { ...trancheForm, id: uid("t") }]);
-    setTrancheForm(null);
+  const addTrancheEcole = (nom) => {
+    if (!nom.trim()) return;
+    setTranchesEcole(prev => [...prev, { id: uid("tr"), nom: nom.trim(), limite: "" }]);
   };
-  const deleteTranche = (id) => setTranches(prev => prev.filter(t => t.id !== id));
+  const renameTrancheEcole = (id, nom) => setTranchesEcole(prev => prev.map(t => t.id === id ? { ...t, nom } : t));
+  const deleteTrancheEcole = (id) => {
+    const aDesPaiements = paiements.some(p => p.trancheId === id);
+    if (aDesPaiements && !window.confirm("Des paiements existent déjà pour cette tranche. La supprimer ne les efface pas, mais son nom n'apparaîtra plus. Continuer ?")) return;
+    setTranchesEcole(prev => prev.filter(t => t.id !== id));
+  };
   const enregistrerPaiement = () => {
     if (!paieForm.studentId || !paieForm.trancheId || !paieForm.montant) return;
+    const el = students.find(s => s.id === paieForm.studentId);
+    const reste = studentReste(el);
+    if (Number(paieForm.montant) > reste) {
+      window.alert(`Ce montant dépasse ce qui reste dû pour cet élève (${fmt(reste)} restant). Corrigez le montant avant d'enregistrer.`);
+      return;
+    }
     const id = uid("p");
     setPaiements(prev => [...prev, { id, ...paieForm, montant: Number(paieForm.montant), date: today }]);
     setPaieForm({ studentId: "", trancheId: "", montant: "", mode: "Espèces" });
@@ -474,6 +485,7 @@ export default function App() {
   const deleteStaff = (id) => setStaff(prev => prev.filter(s => s.id !== id));
   const dejaPayeMois = (staffId, moisLabel) => paieHist.some(p => p.staffId === staffId && p.mois === moisLabel);
   const payerMois = (s, moisLabel) => setPaieHist(prev => [...prev, { id: uid("ph"), staffId: s.id, mois: moisLabel, montant: s.salaire, date: today }]);
+  const annulerPaieMois = (staffId, moisLabel) => { if (window.confirm("Annuler cette paie ? Elle redeviendra à payer.")) setPaieHist(prev => prev.filter(p => !(p.staffId === staffId && p.mois === moisLabel))); };
   const addDepense = () => {
     if (!depForm.categorie || !depForm.montant) return;
     if (depForm.id) {
@@ -590,7 +602,12 @@ export default function App() {
 
         {eleveForm && (
           <Card>
-            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10 }}>{eleveForm.id ? "Modifier l'élève" : "Nouvel élève"}</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10 }}>{eleveForm.id ? "Modifier l'élève" : "Nouvel élève"}</div>
+              <label style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 8, color: C.textSoft, cursor: "pointer", lineHeight: 1 }}>
+                <input type="checkbox" checked={!!eleveForm.excluStats} onChange={e => setEleveForm({ ...eleveForm, excluStats: e.target.checked })} style={{ width: 9, height: 9, margin: 0 }} />
+              </label>
+            </div>
             <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
                 <div style={{ width: 70, height: 70, borderRadius: "50%", background: C.paper, border: `1px solid ${C.line}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
@@ -617,10 +634,6 @@ export default function App() {
                   <div style={{ fontSize: 9.5, color: C.textSoft, marginTop: 2 }}>Boursier/exonéré : laissez vide sinon (0 = gratuit)</div>
                 </div>
               </div>
-              <label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10, fontSize: 9.5, color: C.textSoft, cursor: "pointer", width: "fit-content" }}>
-                <input type="checkbox" checked={!!eleveForm.excluStats} onChange={e => setEleveForm({ ...eleveForm, excluStats: e.target.checked })} style={{ width: 11, height: 11 }} />
-                E.
-              </label>
             </div>
             <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
               <Btn onClick={saveEleve}><Check size={13} /> Enregistrer</Btn>
@@ -734,6 +747,22 @@ export default function App() {
         </Card>
 
         <Card>
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>Tranches de paiement</div>
+          <div style={{ fontSize: 11, color: C.textSoft, marginBottom: 10 }}>Configuration unique, commune à toute l'école (pas de montant propre — le montant se fixe par niveau ci-dessous).</div>
+          <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+            <Input placeholder="Ex : 1ère Tranche" value={nouvelleTrancheNiveau} onChange={e => setNouvelleTrancheNiveau(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") { addTrancheEcole(nouvelleTrancheNiveau); setNouvelleTrancheNiveau(""); } }} style={{ flex: 1 }} />
+            <Btn onClick={() => { addTrancheEcole(nouvelleTrancheNiveau); setNouvelleTrancheNiveau(""); }}><Plus size={13} /></Btn>
+          </div>
+          {tranchesEcole.map(t => (
+            <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 0", borderTop: `1px solid ${C.line}` }}>
+              <Input value={t.nom} onChange={e => renameTrancheEcole(t.id, e.target.value)} style={{ flex: 1 }} />
+              <button onClick={() => deleteTrancheEcole(t.id)} style={{ background: "none", border: "none", cursor: "pointer" }}><Trash2 size={14} color={C.rose} /></button>
+            </div>
+          ))}
+        </Card>
+
+        <Card>
           <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>Configuration pédagogique et financière par niveau</div>
           <div style={{ fontSize: 11, color: C.textSoft, marginBottom: 10 }}>Un seul réglage par niveau s'applique automatiquement à toutes ses sections (1ère A, 1ère B, 1ère C…).</div>
           <Select value={niveauConfigOuvert || ""} onChange={e => setNiveauConfigOuvert(e.target.value || null)} style={{ marginBottom: 12 }}>
@@ -754,10 +783,6 @@ export default function App() {
 
                   <div style={{ fontWeight: 700, fontSize: 12.5, margin: "14px 0 6px" }}>Barème</div>
                   <Input type="number" min="1" value={cfg.bareme} onChange={e => setBaremeNiveau(niveauConfigOuvert, Number(e.target.value) || 20)} style={{ width: 100 }} />
-
-                  <div style={{ fontWeight: 700, fontSize: 12.5, margin: "14px 0 6px" }}>Nombre de tranches de paiement</div>
-                  <div style={{ fontSize: 12.5 }}>{tranches.length} tranche(s) : <span style={{ color: C.textSoft }}>{tranches.map(t => t.nom).join(", ") || "aucune"}</span></div>
-                  <div style={{ fontSize: 10, color: C.textSoft, marginTop: 2 }}>Communes à toute l'école — à modifier dans Comptabilité → Tranches.</div>
 
                   <div style={{ fontWeight: 700, fontSize: 12.5, margin: "14px 0 6px" }}>Trimestres / semestres</div>
                   <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
@@ -1391,9 +1416,9 @@ export default function App() {
     const recu = recuId ? paiements.find(p => p.id === recuId) : null;
     const totalG = students.filter(s => s.sexe === "M").length, totalF = students.filter(s => s.sexe === "F").length;
     const subtabs = [
-      ["effectifs", "Statistiques"], ["suivi", "Suivi par classe"], ["redevables", "Liste des redevables"], ["tranches", "Tranches"], ["paiement", "Paiement"],
+      ["effectifs", "Statistiques"], ["suivi", "Suivi par classe"], ["redevables", "Liste des redevables"], ["paiement", "Paiement"],
       ["stats", "Stats paiement"],
-      ["personnel", "Personnel / Paie"], ["depenses", "Dépenses"], ["rapport", "Rapport global"], ["parametres", "Paramètres"],
+      ["personnel", "Personnel / Paie"], ["depenses", "Dépenses"], ["rapport", "Rapport global"], ["rapportMensuel", "Rapport mensuel"], ["parametres", "Paramètres"],
     ];
 
     return (
@@ -1506,44 +1531,6 @@ export default function App() {
           );
         })()}
 
-        {compTab === "tranches" && (
-          <div>
-            <Card>
-              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>Frais de scolarité par niveau</div>
-              <div style={{ fontSize: 11, color: C.textSoft, marginBottom: 10 }}>Le montant se configure désormais dans le menu <b>Classes</b> (une seule fois par niveau, appliqué à toutes ses sections).</div>
-              {[...new Set(classes.map(c => c.niveau || c.nom))].map(n => (
-                <div key={n} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderTop: `1px solid ${C.line}` }}>
-                  <div style={{ flex: 1, fontWeight: 600 }}>{n}</div>
-                  <div className="f-mono" style={{ fontSize: 12.5 }}>{fmt(configNiveau(n).fraisAnnuel)}</div>
-                </div>
-              ))}
-            </Card>
-
-            <Card>
-              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>Tranches (échéances)</div>
-              <div style={{ fontSize: 11, color: C.textSoft, marginBottom: 10 }}>Les tranches servent à repérer à quel versement correspond un paiement — elles n'ont pas de montant propre.</div>
-              <Btn onClick={() => setTrancheForm({ nom: "", limite: "" })} style={{ marginBottom: 10 }}><Plus size={13} /> Nouvelle tranche</Btn>
-              {trancheForm && (
-                <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
-                  <Input placeholder="Nom (ex: 1ère Tranche)" value={trancheForm.nom} onChange={e => setTrancheForm({ ...trancheForm, nom: e.target.value })} />
-                  <Input type="date" value={trancheForm.limite || ""} onChange={e => setTrancheForm({ ...trancheForm, limite: e.target.value })} />
-                  <Btn onClick={saveTranche}><Check size={13} /></Btn>
-                  <Btn kind="ghost" onClick={() => setTrancheForm(null)}><X size={13} /></Btn>
-                </div>
-              )}
-              {tranches.map(t => (
-                <div key={t.id} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderTop: `1px solid ${C.line}` }}>
-                  <div><b>{t.nom}</b>{t.limite && <span style={{ color: C.textSoft, fontSize: 11 }}> · échéance {t.limite}</span>}</div>
-                  <div style={{ display: "flex", gap: 6 }}>
-                    <button onClick={() => setTrancheForm(t)} style={{ background: "none", border: "none", cursor: "pointer" }}><Pencil size={14} color={C.textSoft} /></button>
-                    <button onClick={() => deleteTranche(t.id)} style={{ background: "none", border: "none", cursor: "pointer" }}><Trash2 size={14} color={C.rose} /></button>
-                  </div>
-                </div>
-              ))}
-            </Card>
-          </div>
-        )}
-
         {compTab === "paiement" && (
           <Card>
             <div className="no-print" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
@@ -1554,7 +1541,7 @@ export default function App() {
                 <option value="">{paieClasseFiltre ? "Élève…" : "Choisissez d'abord une classe"}</option>
                 {students.filter(s => s.classeId === paieClasseFiltre).map(s => <option key={s.id} value={s.id}>{nomMat(s)}</option>)}
               </Select>
-              <Select value={paieForm.trancheId} onChange={e => setPaieForm({ ...paieForm, trancheId: e.target.value })}><option value="">Tranche…</option>{tranches.map(t => <option key={t.id} value={t.id}>{t.nom}</option>)}</Select>
+              <Select value={paieForm.trancheId} onChange={e => setPaieForm({ ...paieForm, trancheId: e.target.value })} disabled={!paieClasseFiltre}><option value="">Tranche…</option>{tranchesEcole.map(t => <option key={t.id} value={t.id}>{t.nom}</option>)}</Select>
               <Input type="number" placeholder="Montant versé" value={paieForm.montant} onChange={e => setPaieForm({ ...paieForm, montant: e.target.value })} />
               <Select value={paieForm.mode} onChange={e => setPaieForm({ ...paieForm, mode: e.target.value })}><option>Espèces</option><option>Mobile Money</option><option>Virement</option><option>Chèque</option></Select>
             </div>
@@ -1565,12 +1552,14 @@ export default function App() {
               return (
                 <div className="no-print" style={{ marginTop: 16 }}>
                   <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 6 }}>Paiements déjà enregistrés pour cet élève</div>
-                  {historiqueEleve.length ? historiqueEleve.map(p => (
+                  {historiqueEleve.length ? historiqueEleve.map(p => { const trancheNom = tranchesEcole.find(t => t.id === p.trancheId)?.nom;
+                    return (
                     <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderTop: `1px solid ${C.line}`, fontSize: 12.5 }}>
-                      <div>{p.date} — {tranches.find(t => t.id === p.trancheId)?.nom} — <span className="f-mono">{fmt(p.montant)}</span> ({p.mode})</div>
+                      <div>{p.date} — {trancheNom} — <span className="f-mono">{fmt(p.montant)}</span> ({p.mode})</div>
                       <Btn kind="ghost" onClick={() => setRecuId(p.id)}><Printer size={12} /> Imprimer le reçu</Btn>
                     </div>
-                  )) : <div style={{ fontSize: 12, color: C.textSoft }}>Aucun paiement enregistré pour le moment.</div>}
+                    );
+                  }) : <div style={{ fontSize: 12, color: C.textSoft }}>Aucun paiement enregistré pour le moment.</div>}
                 </div>
               );
             })()}
@@ -1629,7 +1618,7 @@ export default function App() {
 
                   <Section title="Informations paiement" />
                   <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}><tbody>
-                    <Row label="Libellé paiement" value={tranches.find(t => t.id === recu.trancheId)?.nom} />
+                    <Row label="Libellé paiement" value={tranchesEcole.find(t => t.id === recu.trancheId)?.nom} />
                     <Row label="Montant à payer" value={fmt(attendu)} />
                     <Row label="Montant payé" value={fmt(paye)} bold />
                     <Row label="Date de paiement" value={recu.date} />
@@ -1698,7 +1687,7 @@ export default function App() {
                     return (
                       <Td key={m} style={{ textAlign: "center" }}>
                         {paye
-                          ? <Check size={15} color={C.sage} style={{ verticalAlign: "middle" }} />
+                          ? <button onClick={() => annulerPaieMois(s.id, label)} title="Cliquer pour annuler cette paie" style={{ background: "none", border: "none", cursor: "pointer" }}><Check size={15} color={C.sage} style={{ verticalAlign: "middle" }} /></button>
                           : <button onClick={() => payerMois(s, label)} title={`Marquer ${label} payé`} style={{ background: C.brassSoft, color: C.brass, border: "none", borderRadius: 6, padding: "2px 6px", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>Payer</button>}
                       </Td>
                     );
@@ -1803,6 +1792,54 @@ export default function App() {
             </Card>
           </div>
         )}
+
+        {compTab === "rapportMensuel" && (() => {
+          const moisLabel = `${MOIS[rapportMoisIndex]} ${rapportMoisAnnee}`;
+          const depensesMois = depenses.filter(d => { const dt = new Date(d.date); return dt.getMonth() === rapportMoisIndex && dt.getFullYear() === rapportMoisAnnee; });
+          const paieMois = paieHist.filter(p => p.mois === moisLabel);
+          const totalDepMois = depensesMois.reduce((s, d) => s + Number(d.montant), 0);
+          const totalPaieMois = paieMois.reduce((s, p) => s + Number(p.montant), 0);
+          return (
+            <div>
+              <div className="no-print" style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
+                <Select value={rapportMoisIndex} onChange={e => setRapportMoisIndex(Number(e.target.value))}>
+                  {MOIS.map((m, i) => <option key={m} value={i}>{m}</option>)}
+                </Select>
+                <Input type="number" value={rapportMoisAnnee} onChange={e => setRapportMoisAnnee(Number(e.target.value) || rapportMoisAnnee)} style={{ width: 90 }} />
+                <Btn kind="ghost" onClick={() => window.print()}><Printer size={13} /> Imprimer</Btn>
+              </div>
+
+              <Card className="print-area">
+                <div className="f-display" style={{ fontWeight: 700, fontSize: 15, marginBottom: 12 }}>{config.etablissement} — Rapport de {moisLabel}</div>
+
+                <div style={{ fontWeight: 700, marginBottom: 6 }}>Dépenses du mois</div>
+                <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 10 }}>
+                  <thead><tr><Th>Date</Th><Th>Catégorie</Th><Th>Description</Th><Th>Montant</Th></tr></thead>
+                  <tbody>
+                    {depensesMois.map(d => <tr key={d.id}><Td>{d.date}</Td><Td style={{ fontWeight: 600 }}>{d.categorie}</Td><Td>{d.description}</Td><Td className="f-mono">{fmt(d.montant)}</Td></tr>)}
+                    {!depensesMois.length && <tr><Td style={{ textAlign: "center", color: C.textSoft }} colSpan={4}>Aucune dépense ce mois-ci.</Td></tr>}
+                    <tr style={{ background: C.paper, fontWeight: 700 }}><Td colSpan={3}>Total dépenses</Td><Td className="f-mono">{fmt(totalDepMois)}</Td></tr>
+                  </tbody>
+                </table>
+
+                <div style={{ fontWeight: 700, marginBottom: 6, marginTop: 14 }}>Salaires versés du mois</div>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead><tr><Th>Employé</Th><Th>Poste</Th><Th>Montant</Th></tr></thead>
+                  <tbody>
+                    {paieMois.map(p => { const s = staff.find(x => x.id === p.staffId); return <tr key={p.id}><Td style={{ fontWeight: 600 }}>{s?.nom || "—"}</Td><Td>{s?.poste || "—"}</Td><Td className="f-mono">{fmt(p.montant)}</Td></tr>; })}
+                    {!paieMois.length && <tr><Td style={{ textAlign: "center", color: C.textSoft }} colSpan={3}>Aucun salaire versé ce mois-ci.</Td></tr>}
+                    <tr style={{ background: C.paper, fontWeight: 700 }}><Td colSpan={2}>Total salaires versés</Td><Td className="f-mono">{fmt(totalPaieMois)}</Td></tr>
+                  </tbody>
+                </table>
+
+                <div style={{ marginTop: 16, paddingTop: 10, borderTop: `1px solid ${C.line}`, display: "flex", justifyContent: "space-between", fontWeight: 700 }}>
+                  <span>Total sorties du mois (dépenses + salaires)</span>
+                  <span className="f-mono">{fmt(totalDepMois + totalPaieMois)}</span>
+                </div>
+              </Card>
+            </div>
+          );
+        })()}
       </div>
     );
   };
