@@ -31,6 +31,7 @@ const uid = (p) => p + Math.random().toString(36).slice(2, 8);
 const nomMat = (s) => s ? `${s.prenoms} ${s.nom} — Matricule : ${s.matricule}` : "—";
 const MOIS = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
 const ANNEES_SCOLAIRES = Array.from({ length: 20 }, (_, i) => `${2026 + i}-${2027 + i}`);
+const NIVEAUX_STANDARDS = ["Petite Section", "Moyenne Section", "Grande Section", "1ère", "2ème", "3ème", "4ème", "5ème", "6ème", "7ème", "8ème", "9ème", "10ème", "11ème", "12ème", "Terminale"];
 
 /* ================= Données de démonstration ================= */
 const initClasses = () => ([
@@ -142,6 +143,7 @@ export default function App() {
   const [paieHist, setPaieHist] = useState(initPaieHist());
   const [depenses, setDepenses] = useState(initDepenses());
   const [matieresConfig, setMatieresConfig] = useState(initMatieres());
+  const [configNiveaux, setConfigNiveaux] = useState({});
   const [notes, setNotes] = useState(initNotes());
   const [materiels, setMateriels] = useState(initMateriels());
   const [archives, setArchives] = useState({});
@@ -177,6 +179,7 @@ export default function App() {
         setPaieHist(d.paieHist || initPaieHist());
         setDepenses(d.depenses || initDepenses());
         setMatieresConfig(d.matieresConfig || initMatieres());
+        setConfigNiveaux(d.configNiveaux || {});
         setNotes(d.notes || initNotes());
         setMateriels(d.materiels || initMateriels());
         setArchives(d.archives || {});
@@ -194,7 +197,7 @@ export default function App() {
           data: {
             classes: initClasses(), students: initStudents(), tranches: initTranches(), paiements: initPaiements(),
             staff: initStaff(), paieHist: initPaieHist(), depenses: initDepenses(), matieresConfig: initMatieres(),
-            notes: initNotes(), materiels: initMateriels(), archives: {}, conduites: [], config: { devise: "GNF", etablissement: "GROUPE SCOLAIRE PRIVÉ CARMEL", etablissementAdresse: "", etablissementTels: "", etablissementEmail: "", ire: "", dpe: "", anneeScolaire: "2026-2027", bareme: 20, comptaPassword: "compta2026", logo: null },
+            notes: initNotes(), materiels: initMateriels(), archives: {}, conduites: [], configNiveaux: {}, config: { devise: "GNF", etablissement: "GROUPE SCOLAIRE PRIVÉ CARMEL", etablissementAdresse: "", etablissementTels: "", etablissementEmail: "", ire: "", dpe: "", anneeScolaire: "2026-2027", bareme: 20, comptaPassword: "compta2026", logo: null },
           },
         });
       }
@@ -207,12 +210,12 @@ export default function App() {
     const t = setTimeout(() => {
       supabase.from("app_state").upsert({
         id: "main",
-        data: { classes, students, tranches, paiements, staff, paieHist, depenses, matieresConfig, notes, materiels, archives, conduites, config },
+        data: { classes, students, tranches, paiements, staff, paieHist, depenses, matieresConfig, configNiveaux, notes, materiels, archives, conduites, config },
         updated_at: new Date().toISOString(),
       }).then();
     }, 800);
     return () => clearTimeout(t);
-  }, [classes, students, tranches, paiements, staff, paieHist, depenses, matieresConfig, notes, materiels, archives, conduites, config, session, dataLoaded]);
+  }, [classes, students, tranches, paiements, staff, paieHist, depenses, matieresConfig, configNiveaux, notes, materiels, archives, conduites, config, session, dataLoaded]);
 
 
   /* ---- Élèves ---- */
@@ -221,10 +224,11 @@ export default function App() {
   const [eleveSort, setEleveSort] = useState({ champ: "nom", dir: 1 });
 
   /* ---- Classes ---- */
-  const [nouvelleClasse, setNouvelleClasse] = useState("");
+  const [nouvelleClasseNiveau, setNouvelleClasseNiveau] = useState("");
+  const [nouvelleClasseLibelle, setNouvelleClasseLibelle] = useState("");
   const [classeSelectionnee, setClasseSelectionnee] = useState(null);
-  const [classeConfigOuverte, setClasseConfigOuverte] = useState(null);
-  const [nouvellePeriodeClasse, setNouvellePeriodeClasse] = useState("");
+  const [niveauConfigOuvert, setNiveauConfigOuvert] = useState(null);
+  const [nouvellePeriodeNiveau, setNouvellePeriodeNiveau] = useState("");
 
   /* ---- Bulletin ---- */
   const [bulClasse, setBulClasse] = useState("cl1");
@@ -267,10 +271,16 @@ export default function App() {
     const l = students.filter(s => s.classeId === classeId);
     return { garcons: l.filter(s => s.sexe === "M").length, filles: l.filter(s => s.sexe === "F").length, total: l.length };
   };
+  const niveauDe = (classeId) => { const c = classes.find(x => x.id === classeId); return c ? (c.niveau || c.nom) : null; };
+  const DEFAUT_NIVEAU = { fraisAnnuel: 0, bareme: 20, periodes: ["Trimestre 1", "Trimestre 2", "Trimestre 3"] };
+  const configNiveau = (niveau) => configNiveaux[niveau] || DEFAUT_NIVEAU;
   const studentPaid = (id) => paiements.filter(p => p.studentId === id).reduce((s, p) => s + Number(p.montant), 0);
-  const studentAttendu = (s) => Number(classes.find(c => c.id === s?.classeId)?.montantAnnuel || 0);
+  const studentAttendu = (s) => {
+    if (s?.montantPersonnalise !== undefined && s?.montantPersonnalise !== null && s?.montantPersonnalise !== "") return Number(s.montantPersonnalise);
+    return Number(configNiveau(niveauDe(s?.classeId)).fraisAnnuel || 0);
+  };
   const studentReste = (s) => studentAttendu(s) - studentPaid(s.id);
-  const totalEntrees = paiements.reduce((s, p) => s + Number(p.montant), 0);
+  const totalEntrees = paiements.reduce((s, p) => { const el = students.find(x => x.id === p.studentId); return el?.excluStats ? s : s + Number(p.montant); }, 0);
   const totalDepenses = depenses.reduce((s, d) => s + Number(d.montant), 0);
   const totalPaieVersee = paieHist.reduce((s, p) => s + Number(p.montant), 0);
   const bilan = totalEntrees - totalDepenses - totalPaieVersee;
@@ -288,28 +298,44 @@ export default function App() {
     reader.onload = () => setEleveForm(f => ({ ...f, photo: reader.result }));
     reader.readAsDataURL(file);
   };
-  const addClasse = () => { if (!nouvelleClasse.trim()) return; setClasses(prev => [...prev, { id: uid("cl"), nom: nouvelleClasse.trim(), montantAnnuel: 0, bareme: 20, periodes: ["Trimestre 1", "Trimestre 2", "Trimestre 3"] }]); setNouvelleClasse(""); };
+  const addClasse = () => {
+    if (!nouvelleClasseNiveau.trim()) return;
+    const nom = nouvelleClasseLibelle.trim() ? `${nouvelleClasseNiveau.trim()} ${nouvelleClasseLibelle.trim()}` : nouvelleClasseNiveau.trim();
+    setClasses(prev => [...prev, { id: uid("cl"), nom, niveau: nouvelleClasseNiveau.trim() }]);
+    setNouvelleClasseLibelle("");
+  };
+  const configurerNiveauxStandards = () => {
+    const niveauxExistants = new Set(classes.map(c => c.niveau || c.nom));
+    const manquants = NIVEAUX_STANDARDS.filter(n => !niveauxExistants.has(n));
+    if (!manquants.length) { window.alert("Tous les niveaux standards existent déjà."); return; }
+    if (!window.confirm(`Créer les ${manquants.length} niveau(x) manquant(s) : ${manquants.join(", ")} ?\n\nLes niveaux déjà présents ne sont pas touchés.`)) return;
+    setClasses(prev => [
+      ...prev,
+      ...manquants.map(n => ({ id: uid("cl"), nom: n, niveau: n })),
+    ]);
+  };
   const renameClasse = (id, nom) => setClasses(prev => prev.map(c => c.id === id ? { ...c, nom } : c));
-  const setMontantAnnuelClasse = (id, montant) => setClasses(prev => prev.map(c => c.id === id ? { ...c, montantAnnuel: montant } : c));
-  const setBaremeClasse = (id, bareme) => setClasses(prev => prev.map(c => c.id === id ? { ...c, bareme } : c));
-  const addPeriodeClasse = (id, nom) => { if (!nom.trim()) return; setClasses(prev => prev.map(c => c.id === id ? { ...c, periodes: [...(c.periodes || []), nom.trim()] } : c)); };
-  const renamePeriodeClasse = (id, index, val) => {
-    const cl = classes.find(c => c.id === id);
-    const ancien = cl?.periodes?.[index];
-    setClasses(prev => prev.map(c => c.id === id ? { ...c, periodes: (c.periodes || []).map((p, i) => i === index ? val : p) } : c));
+  const setFraisNiveau = (niveau, montant) => setConfigNiveaux(prev => ({ ...prev, [niveau]: { ...configNiveau(niveau), fraisAnnuel: montant } }));
+  const setBaremeNiveau = (niveau, bareme) => setConfigNiveaux(prev => ({ ...prev, [niveau]: { ...configNiveau(niveau), bareme } }));
+  const addPeriodeNiveau = (niveau, nom) => {
+    if (!nom.trim()) return;
+    setConfigNiveaux(prev => ({ ...prev, [niveau]: { ...configNiveau(niveau), periodes: [...configNiveau(niveau).periodes, nom.trim()] } }));
+  };
+  const renamePeriodeNiveau = (niveau, index, val) => {
+    const ancien = configNiveau(niveau).periodes[index];
+    setConfigNiveaux(prev => ({ ...prev, [niveau]: { ...configNiveau(niveau), periodes: configNiveau(niveau).periodes.map((p, i) => i === index ? val : p) } }));
     if (ancien && ancien !== val) {
-      const idsEleves = new Set(students.filter(s => s.classeId === id).map(s => s.id));
+      const idsEleves = new Set(students.filter(s => niveauDe(s.classeId) === niveau).map(s => s.id));
       setNotes(prev => prev.map(n => (idsEleves.has(n.studentId) && n.trimestre === ancien) ? { ...n, trimestre: val } : n));
       setConduites(prev => prev.map(cd => (idsEleves.has(cd.studentId) && cd.trimestre === ancien) ? { ...cd, trimestre: val } : cd));
     }
   };
-  const deletePeriodeClasse = (id, index) => {
-    const cl = classes.find(c => c.id === id);
-    const nom = cl?.periodes?.[index];
-    const idsEleves = new Set(students.filter(s => s.classeId === id).map(s => s.id));
+  const deletePeriodeNiveau = (niveau, index) => {
+    const nom = configNiveau(niveau).periodes[index];
+    const idsEleves = new Set(students.filter(s => niveauDe(s.classeId) === niveau).map(s => s.id));
     const aDesNotes = nom && notes.some(n => idsEleves.has(n.studentId) && n.trimestre === nom);
     if (aDesNotes && !window.confirm(`Des notes existent déjà pour "${nom}". Les supprimer de la liste des périodes les rendra inaccessibles (elles ne seront pas effacées, mais invisibles tant que "${nom}" n'est pas recréée à l'identique). Continuer ?`)) return;
-    setClasses(prev => prev.map(c => c.id === id ? { ...c, periodes: (c.periodes || []).filter((_, i) => i !== index) } : c));
+    setConfigNiveaux(prev => ({ ...prev, [niveau]: { ...configNiveau(niveau), periodes: configNiveau(niveau).periodes.filter((_, i) => i !== index) } }));
   };
   const appliquerChangementAnnee = () => {
     const nouvelle = anneeEnAttente;
@@ -319,13 +345,22 @@ export default function App() {
     setArchives(prev => ({ ...prev, [anneeQuittee]: { notes, paiements, paieHist, depenses, materiels } }));
 
     // Passage en classe supérieure selon la moyenne annuelle (admis) ou maintien (échec)
+    // Basé sur le "niveau" de la classe (permet plusieurs sections A/B/C par niveau)
+    const niveauxOrdonnes = [];
+    classes.forEach(c => { const niv = c.niveau || c.nom; if (!niveauxOrdonnes.includes(niv)) niveauxOrdonnes.push(niv); });
+
     setStudents(prev => prev.map(s => {
-      const idx = classes.findIndex(c => c.id === s.classeId);
-      if (idx === -1) return s;
-      const cl = classes[idx];
+      const cl = classes.find(c => c.id === s.classeId);
+      if (!cl) return s;
+      const niveauActuel = cl.niveau || cl.nom;
+      const idxNiveau = niveauxOrdonnes.indexOf(niveauActuel);
       const moy = moyenneEleve(s.id, s.classeId, "ANNUEL");
-      const admis = moy != null && (moy / (cl.bareme || 20) * 20) >= 10;
-      if (admis && classes[idx + 1]) return { ...s, classeId: classes[idx + 1].id };
+      const admis = moy != null && (moy / (configNiveau(niveauActuel).bareme || 20) * 20) >= 10;
+      if (admis && idxNiveau !== -1 && idxNiveau + 1 < niveauxOrdonnes.length) {
+        const niveauSuivant = niveauxOrdonnes[idxNiveau + 1];
+        const classeSuivante = classes.find(c => (c.niveau || c.nom) === niveauSuivant);
+        if (classeSuivante) return { ...s, classeId: classeSuivante.id };
+      }
       return s;
     }));
 
@@ -340,16 +375,16 @@ export default function App() {
   const deleteClasse = (id) => { setClasses(prev => prev.filter(c => c.id !== id)); if (classeSelectionnee === id) setClasseSelectionnee(null); };
 
   /* ---------- Actions Bulletin ---------- */
-  const saveMatiere = (classeId) => {
+  const saveMatiere = (niveau) => {
     if (!matiereForm.nom || !matiereForm.coef) return;
     setMatieresConfig(prev => {
-      const list = prev[classeId] || [];
+      const list = prev[niveau] || [];
       const updated = matiereForm.id ? list.map(m => m.id === matiereForm.id ? matiereForm : m) : [...list, { ...matiereForm, id: uid("mt") }];
-      return { ...prev, [classeId]: updated };
+      return { ...prev, [niveau]: updated };
     });
     setMatiereForm(null);
   };
-  const deleteMatiere = (classeId, id) => setMatieresConfig(prev => ({ ...prev, [classeId]: (prev[classeId] || []).filter(m => m.id !== id) }));
+  const deleteMatiere = (niveau, id) => setMatieresConfig(prev => ({ ...prev, [niveau]: (prev[niveau] || []).filter(m => m.id !== id) }));
   const setNote = (studentId, matiereId, trimestre, value) => {
     setNotes(prev => {
       const existing = prev.find(n => n.studentId === studentId && n.matiereId === matiereId && n.trimestre === trimestre);
@@ -369,7 +404,7 @@ export default function App() {
   const noteDe = (studentId, matiereId, trimestre) => {
     if (trimestre === "ANNUEL") {
       const classeIdEleve = students.find(s => s.id === studentId)?.classeId;
-      const periodesClasse = classes.find(c => c.id === classeIdEleve)?.periodes || [];
+      const periodesClasse = configNiveau(niveauDe(classeIdEleve)).periodes;
       const vals = periodesClasse.map(per => notes.find(n => n.studentId === studentId && n.matiereId === matiereId && n.trimestre === per)?.note).filter(v => v != null);
       return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
     }
@@ -387,7 +422,7 @@ export default function App() {
     return `${rang}${rang === 1 ? "er" : "e"}${exaequo ? " exo" : ""}`;
   };
   const moyenneEleve = (studentId, classeId, trimestre) => {
-    const mats = matieresConfig[classeId] || [];
+    const mats = matieresConfig[niveauDe(classeId)] || [];
     let sc = 0, sp = 0;
     mats.forEach(m => {
       const n = noteDe(studentId, m.id, trimestre);
@@ -441,9 +476,14 @@ export default function App() {
   const payerMois = (s, moisLabel) => setPaieHist(prev => [...prev, { id: uid("ph"), staffId: s.id, mois: moisLabel, montant: s.salaire, date: today }]);
   const addDepense = () => {
     if (!depForm.categorie || !depForm.montant) return;
-    setDepenses(prev => [...prev, { id: uid("d"), ...depForm, montant: Number(depForm.montant), date: today }]);
+    if (depForm.id) {
+      setDepenses(prev => prev.map(d => d.id === depForm.id ? { ...d, categorie: depForm.categorie, montant: Number(depForm.montant), description: depForm.description } : d));
+    } else {
+      setDepenses(prev => [...prev, { id: uid("d"), ...depForm, montant: Number(depForm.montant), date: today }]);
+    }
     setDepForm({ categorie: "", montant: "", description: "" });
   };
+  const deleteDepense = (id) => setDepenses(prev => prev.filter(d => d.id !== id));
 
   /* ---------- Actions Matériels didactiques ---------- */
   const saveMateriel = () => {
@@ -572,7 +612,15 @@ export default function App() {
                 <Input placeholder="Nom du parent" value={eleveForm.parent} onChange={e => setEleveForm({ ...eleveForm, parent: e.target.value })} />
                 <Input placeholder="Téléphone" value={eleveForm.telephone} onChange={e => setEleveForm({ ...eleveForm, telephone: e.target.value })} />
                 <Select value={eleveForm.statut || "Nouveau"} onChange={e => setEleveForm({ ...eleveForm, statut: e.target.value })}><option value="Nouveau">Nouveau</option><option value="Ancien">Ancien</option></Select>
+                <div>
+                  <Input type="number" min="0" placeholder="Montant annuel personnalisé" value={eleveForm.montantPersonnalise ?? ""} onChange={e => setEleveForm({ ...eleveForm, montantPersonnalise: e.target.value === "" ? null : e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
+                  <div style={{ fontSize: 9.5, color: C.textSoft, marginTop: 2 }}>Boursier/exonéré : laissez vide sinon (0 = gratuit)</div>
+                </div>
               </div>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10, fontSize: 9.5, color: C.textSoft, cursor: "pointer", width: "fit-content" }}>
+                <input type="checkbox" checked={!!eleveForm.excluStats} onChange={e => setEleveForm({ ...eleveForm, excluStats: e.target.checked })} style={{ width: 11, height: 11 }} />
+                E.
+              </label>
             </div>
             <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
               <Btn onClick={saveEleve}><Check size={13} /> Enregistrer</Btn>
@@ -605,7 +653,10 @@ export default function App() {
                   <Td style={{ fontWeight: 600 }}>{s.prenoms} {s.nom}</Td>
                   <Td>{s.sexe}</Td><Td>{s.naissance}</Td><Td className="f-mono">{s.matricule}</Td>
                   <Td>{classes.find(c => c.id === s.classeId)?.nom || "—"}</Td>
-                  <Td><Pill_ text={s.statut || "Nouveau"} color={s.statut === "Ancien" ? C.brass : C.sage} bg={s.statut === "Ancien" ? C.brassSoft : C.sageSoft} /></Td>
+                  <Td>
+                    <Pill_ text={s.statut || "Nouveau"} color={s.statut === "Ancien" ? C.brass : C.sage} bg={s.statut === "Ancien" ? C.brassSoft : C.sageSoft} />
+                    {(s.montantPersonnalise !== undefined && s.montantPersonnalise !== null && s.montantPersonnalise !== "") && <span style={{ marginLeft: 4 }}><Pill_ text="Boursier" color={C.rose} bg={C.roseSoft} /></span>}
+                  </Td>
                   <Td>{s.parent}</Td><Td>{s.telephone}</Td>
                   <Td><div style={{ display: "flex", gap: 4 }}>
                     <button onClick={() => setEleveForm(s)} style={{ background: "none", border: "none", cursor: "pointer" }}><Pencil size={14} color={C.textSoft} /></button>
@@ -626,7 +677,13 @@ export default function App() {
     return (
       <div>
         <div className="f-display" style={{ fontSize: 22, color: C.text, fontWeight: 600, marginBottom: 4 }}>Classes</div>
-        <div style={{ color: C.textSoft, fontSize: 13, marginBottom: 16 }}>Ajoutez autant de niveaux que nécessaire — aucune limite.</div>
+        <div style={{ color: C.textSoft, fontSize: 13, marginBottom: 16 }}>Ajoutez autant de niveaux que nécessaire — aucune limite. Pour plusieurs sections d'un même niveau (ex : 1ère A, 1ère B, 1ère C), donnez-leur le même "Niveau" — le passage en classe supérieure s'appuiera dessus, pas sur le nom de la classe.</div>
+
+        <Card>
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>Configuration rapide</div>
+          <div style={{ fontSize: 11, color: C.textSoft, marginBottom: 10 }}>Crée en un clic les niveaux manquants, dans l'ordre : {NIVEAUX_STANDARDS.join(" → ")}.</div>
+          <Btn kind="brass" onClick={configurerNiveauxStandards}><Plus size={13} /> Configurer les 16 niveaux standards</Btn>
+        </Card>
 
         <Card>
           <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>Année scolaire</div>
@@ -654,68 +711,92 @@ export default function App() {
           </div>
         </Card>
         <Card>
-          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-            <Input placeholder="Nom du nouveau niveau (ex : CP)" value={nouvelleClasse} onChange={e => setNouvelleClasse(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && addClasse()} style={{ flex: 1 }} />
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Ajouter une classe (section)</div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+            <Select value={nouvelleClasseNiveau} onChange={e => setNouvelleClasseNiveau(e.target.value)} style={{ flex: 1, minWidth: 160 }}>
+              <option value="">Choisir un niveau…</option>
+              {[...new Set([...NIVEAUX_STANDARDS, ...classes.map(c => c.niveau || c.nom)])].map(n => <option key={n} value={n}>{n}</option>)}
+            </Select>
+            <Input placeholder="Libellé (ex : A, B, C — laisser vide si une seule section)" value={nouvelleClasseLibelle} onChange={e => setNouvelleClasseLibelle(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && addClasse()} style={{ flex: 1, minWidth: 200 }} />
             <Btn onClick={addClasse}><Plus size={13} /> Ajouter</Btn>
           </div>
           {classes.map(c => (
-            <div key={c.id}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderTop: `1px solid ${C.line}`, flexWrap: "wrap" }}>
-                <Input value={c.nom} onChange={e => renameClasse(c.id, e.target.value)} style={{ flex: 1, minWidth: 140 }} />
-                <Input placeholder="Cycle (ex : Secondaire)" value={c.cycle || ""} onChange={e => setClasses(prev => prev.map(x => x.id === c.id ? { ...x, cycle: e.target.value } : x))} style={{ width: 150 }} />
-                <span style={{ fontSize: 11, color: C.textSoft }}>{classStats(c.id).total} élève(s)</span>
-                <Btn kind="ghost" onClick={() => setClasseConfigOuverte(classeConfigOuverte === c.id ? null : c.id)}>{classeConfigOuverte === c.id ? "Fermer" : "Configurer notes"}</Btn>
-                <Btn kind="ghost" onClick={() => setClasseSelectionnee(c.id)}>Voir la liste</Btn>
-                <button onClick={() => deleteClasse(c.id)} style={{ background: "none", border: "none", cursor: "pointer" }}><Trash2 size={14} color={C.rose} /></button>
-              </div>
-
-              {classeConfigOuverte === c.id && (
-                <div style={{ background: C.paper, borderRadius: 10, padding: 14, marginTop: 6, marginBottom: 10 }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 16 }}>
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 6 }}>Barème</div>
-                      <Input type="number" min="1" value={c.bareme || 20} onChange={e => setBaremeClasse(c.id, Number(e.target.value) || 20)} style={{ width: 100 }} />
-                      <div style={{ fontWeight: 700, fontSize: 12.5, margin: "14px 0 6px" }}>Trimestres / semestres</div>
-                      <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
-                        <Input placeholder="Ex : Semestre 1" value={classeConfigOuverte === c.id ? nouvellePeriodeClasse : ""} onChange={e => setNouvellePeriodeClasse(e.target.value)}
-                          onKeyDown={e => { if (e.key === "Enter") { addPeriodeClasse(c.id, nouvellePeriodeClasse); setNouvellePeriodeClasse(""); } }} style={{ flex: 1 }} />
-                        <Btn onClick={() => { addPeriodeClasse(c.id, nouvellePeriodeClasse); setNouvellePeriodeClasse(""); }}><Plus size={13} /></Btn>
-                      </div>
-                      {(c.periodes || []).map((p, i) => (
-                        <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 0" }}>
-                          <Input value={p} onChange={e => renamePeriodeClasse(c.id, i, e.target.value)} style={{ flex: 1 }} />
-                          <button onClick={() => deletePeriodeClasse(c.id, i)} style={{ background: "none", border: "none", cursor: "pointer" }}><Trash2 size={13} color={C.rose} /></button>
-                        </div>
-                      ))}
-                    </div>
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 6 }}>Matières & coefficients</div>
-                      <Btn onClick={() => setMatiereForm({ nom: "", coef: 1 })} style={{ marginBottom: 8 }}><Plus size={13} /> Ajouter une matière</Btn>
-                      {matiereForm && (
-                        <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
-                          <Input placeholder="Nom de la matière" value={matiereForm.nom} onChange={e => setMatiereForm({ ...matiereForm, nom: e.target.value })} />
-                          <Input type="number" min="1" placeholder="Coefficient" value={matiereForm.coef} onChange={e => setMatiereForm({ ...matiereForm, coef: e.target.value })} style={{ width: 100 }} />
-                          <Btn onClick={() => saveMatiere(c.id)}><Check size={13} /></Btn>
-                          <Btn kind="ghost" onClick={() => setMatiereForm(null)}><X size={13} /></Btn>
-                        </div>
-                      )}
-                      {(matieresConfig[c.id] || []).map(m => (
-                        <div key={m.id} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderTop: `1px solid ${C.line}` }}>
-                          <div>{m.nom} <span className="f-mono" style={{ color: C.textSoft, fontSize: 11 }}>coef {m.coef}</span></div>
-                          <div style={{ display: "flex", gap: 6 }}>
-                            <button onClick={() => setMatiereForm(m)} style={{ background: "none", border: "none", cursor: "pointer" }}><Pencil size={13} color={C.textSoft} /></button>
-                            <button onClick={() => deleteMatiere(c.id, m.id)} style={{ background: "none", border: "none", cursor: "pointer" }}><Trash2 size={13} color={C.rose} /></button>
-                          </div>
-                        </div>
-                      ))}
-                      {!(matieresConfig[c.id] || []).length && <div style={{ fontSize: 11.5, color: C.textSoft }}>Aucune matière configurée.</div>}
-                    </div>
-                  </div>
-                </div>
-              )}
+            <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderTop: `1px solid ${C.line}`, flexWrap: "wrap" }}>
+              <div style={{ flex: 1, minWidth: 140, fontWeight: 600 }}>{c.nom}</div>
+              <Input placeholder="Niveau (ex : 1ère)" value={c.niveau || ""} onChange={e => setClasses(prev => prev.map(x => x.id === c.id ? { ...x, niveau: e.target.value } : x))} style={{ width: 130 }} />
+              <Input placeholder="Cycle (ex : Secondaire)" value={c.cycle || ""} onChange={e => setClasses(prev => prev.map(x => x.id === c.id ? { ...x, cycle: e.target.value } : x))} style={{ width: 150 }} />
+              <span style={{ fontSize: 11, color: C.textSoft }}>{classStats(c.id).total} élève(s)</span>
+              <Btn kind="ghost" onClick={() => setClasseSelectionnee(c.id)}>Voir la liste</Btn>
+              <button onClick={() => deleteClasse(c.id)} style={{ background: "none", border: "none", cursor: "pointer" }}><Trash2 size={14} color={C.rose} /></button>
             </div>
           ))}
+        </Card>
+
+        <Card>
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>Configuration pédagogique et financière par niveau</div>
+          <div style={{ fontSize: 11, color: C.textSoft, marginBottom: 10 }}>Un seul réglage par niveau s'applique automatiquement à toutes ses sections (1ère A, 1ère B, 1ère C…).</div>
+          <Select value={niveauConfigOuvert || ""} onChange={e => setNiveauConfigOuvert(e.target.value || null)} style={{ marginBottom: 12 }}>
+            <option value="">Choisir un niveau à configurer…</option>
+            {[...new Set(classes.map(c => c.niveau || c.nom))].map(n => <option key={n} value={n}>{n}</option>)}
+          </Select>
+
+          {niveauConfigOuvert && (() => { const cfg = configNiveau(niveauConfigOuvert); return (
+            <div style={{ background: C.paper, borderRadius: 10, padding: 14 }}>
+              <div style={{ fontSize: 11.5, color: C.textSoft, marginBottom: 10 }}>
+                Sections concernées : <b>{classes.filter(c => (c.niveau || c.nom) === niveauConfigOuvert).map(c => c.nom).join(", ")}</b>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 16 }}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 6 }}>Frais de scolarité annuel</div>
+                  <Input type="number" min="0" value={cfg.fraisAnnuel} onChange={e => setFraisNiveau(niveauConfigOuvert, Number(e.target.value) || 0)} style={{ width: "100%", boxSizing: "border-box" }} />
+                  <div style={{ fontSize: 10, color: C.textSoft, marginTop: 3 }}>{config.devise} — identique pour toutes les sections de ce niveau</div>
+
+                  <div style={{ fontWeight: 700, fontSize: 12.5, margin: "14px 0 6px" }}>Barème</div>
+                  <Input type="number" min="1" value={cfg.bareme} onChange={e => setBaremeNiveau(niveauConfigOuvert, Number(e.target.value) || 20)} style={{ width: 100 }} />
+
+                  <div style={{ fontWeight: 700, fontSize: 12.5, margin: "14px 0 6px" }}>Nombre de tranches de paiement</div>
+                  <div style={{ fontSize: 12.5 }}>{tranches.length} tranche(s) : <span style={{ color: C.textSoft }}>{tranches.map(t => t.nom).join(", ") || "aucune"}</span></div>
+                  <div style={{ fontSize: 10, color: C.textSoft, marginTop: 2 }}>Communes à toute l'école — à modifier dans Comptabilité → Tranches.</div>
+
+                  <div style={{ fontWeight: 700, fontSize: 12.5, margin: "14px 0 6px" }}>Trimestres / semestres</div>
+                  <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+                    <Input placeholder="Ex : Semestre 1" value={nouvellePeriodeNiveau} onChange={e => setNouvellePeriodeNiveau(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter") { addPeriodeNiveau(niveauConfigOuvert, nouvellePeriodeNiveau); setNouvellePeriodeNiveau(""); } }} style={{ flex: 1 }} />
+                    <Btn onClick={() => { addPeriodeNiveau(niveauConfigOuvert, nouvellePeriodeNiveau); setNouvellePeriodeNiveau(""); }}><Plus size={13} /></Btn>
+                  </div>
+                  {cfg.periodes.map((p, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 0" }}>
+                      <Input value={p} onChange={e => renamePeriodeNiveau(niveauConfigOuvert, i, e.target.value)} style={{ flex: 1 }} />
+                      <button onClick={() => deletePeriodeNiveau(niveauConfigOuvert, i)} style={{ background: "none", border: "none", cursor: "pointer" }}><Trash2 size={13} color={C.rose} /></button>
+                    </div>
+                  ))}
+                </div>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 6 }}>Matières & coefficients</div>
+                  <Btn onClick={() => setMatiereForm({ nom: "", coef: 1 })} style={{ marginBottom: 8 }}><Plus size={13} /> Ajouter une matière</Btn>
+                  {matiereForm && (
+                    <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
+                      <Input placeholder="Nom de la matière" value={matiereForm.nom} onChange={e => setMatiereForm({ ...matiereForm, nom: e.target.value })} />
+                      <Input type="number" min="1" placeholder="Coefficient" value={matiereForm.coef} onChange={e => setMatiereForm({ ...matiereForm, coef: e.target.value })} style={{ width: 100 }} />
+                      <Btn onClick={() => saveMatiere(niveauConfigOuvert)}><Check size={13} /></Btn>
+                      <Btn kind="ghost" onClick={() => setMatiereForm(null)}><X size={13} /></Btn>
+                    </div>
+                  )}
+                  {(matieresConfig[niveauConfigOuvert] || []).map(m => (
+                    <div key={m.id} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderTop: `1px solid ${C.line}` }}>
+                      <div>{m.nom} <span className="f-mono" style={{ color: C.textSoft, fontSize: 11 }}>coef {m.coef}</span></div>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <button onClick={() => setMatiereForm(m)} style={{ background: "none", border: "none", cursor: "pointer" }}><Pencil size={13} color={C.textSoft} /></button>
+                        <button onClick={() => deleteMatiere(niveauConfigOuvert, m.id)} style={{ background: "none", border: "none", cursor: "pointer" }}><Trash2 size={13} color={C.rose} /></button>
+                      </div>
+                    </div>
+                  ))}
+                  {!(matieresConfig[niveauConfigOuvert] || []).length && <div style={{ fontSize: 11.5, color: C.textSoft }}>Aucune matière configurée.</div>}
+                </div>
+              </div>
+            </div>
+          ); })()}
         </Card>
 
         {classeSelectionnee && (
@@ -738,9 +819,10 @@ export default function App() {
 
   /* ----- Saisie de notes (tableau classe entière) ----- */
   const renderSaisie = () => {
-    const matieres = matieresConfig[saisieClasse] || [];
+    const niveauSaisie = niveauDe(saisieClasse);
+    const matieres = matieresConfig[niveauSaisie] || [];
     const classeSaisie = classes.find(c => c.id === saisieClasse);
-    const periodesClasse = classeSaisie?.periodes || [];
+    const periodesClasse = configNiveau(niveauSaisie).periodes;
     const eleves = students.filter(s => s.classeId === saisieClasse).sort((a, b) => a.nom.localeCompare(b.nom));
     const noteA = (studentId, matiereId, periode) => notes.find(n => n.studentId === studentId && n.matiereId === matiereId && n.trimestre === periode)?.note ?? null;
 
@@ -786,7 +868,7 @@ export default function App() {
                     <td style={{ padding: "7px 10px", fontWeight: 600, whiteSpace: "nowrap", border: `1px solid ${C.line}` }}>{s.prenoms} {s.nom}<div className="f-mono" style={{ fontWeight: 400, fontSize: 10.5, color: C.textSoft }}>Matricule : {s.matricule}</div></td>
                     {matieres.map(m => periodesClasse.map(p => (
                       <td key={m.id + p} style={{ padding: "4px 5px", textAlign: "center", border: `1px solid ${C.line}` }}>
-                        <input type="number" min="0" max={classeSaisie?.bareme || 20} step="0.5" value={noteA(s.id, m.id, p) ?? ""} placeholder="—"
+                        <input type="number" min="0" max={configNiveau(niveauSaisie).bareme} step="0.5" value={noteA(s.id, m.id, p) ?? ""} placeholder="—"
                           onChange={e => setNote(s.id, m.id, p, e.target.value)}
                           style={{ width: 42, textAlign: "center", padding: "3px 2px", borderRadius: 5, border: `1px solid ${C.line}`, fontSize: 11.5 }} />
                       </td>
@@ -880,13 +962,14 @@ export default function App() {
   /* ----- Résultats (classement imprimable, par classe / période / année) ----- */
   const renderResultats = () => {
     const classeR = classes.find(c => c.id === resultatClasse);
-    const bareme = classeR?.bareme || 20;
-    const periodesClasse = classeR?.periodes || [];
+    const niveauR = niveauDe(resultatClasse);
+    const bareme = configNiveau(niveauR).bareme;
+    const periodesClasse = configNiveau(niveauR).periodes;
     const anneeChoisie = resultatAnnee || config.anneeScolaire;
     const periodeChoisie = resultatPeriode || periodesClasse[0] || "ANNUEL";
     const anneesDisponibles = [config.anneeScolaire, ...Object.keys(archives)].filter((v, i, a) => a.indexOf(v) === i);
     const notesSource = anneeChoisie === config.anneeScolaire ? notes : (archives[anneeChoisie]?.notes || []);
-    const matieres = matieresConfig[resultatClasse] || [];
+    const matieres = matieresConfig[niveauR] || [];
 
     const noteDeSrc = (studentId, matiereId, trimestre) => {
       if (trimestre === "ANNUEL") {
@@ -1071,8 +1154,9 @@ export default function App() {
     if (!eleve) return null;
     const classeId = eleve.classeId;
     const classeEleve = classes.find(c => c.id === classeId);
-    const bareme = classeEleve?.bareme || 20;
-    const periodesClasse = classeEleve?.periodes || [];
+    const niveauEleve = niveauDe(classeId);
+    const bareme = configNiveau(niveauEleve).bareme;
+    const periodesClasse = configNiveau(niveauEleve).periodes;
     const estAnnuel = bulTrimestre === "ANNUEL";
     const matieres = matieresConfig[classeId] || [];
     const noteOf = (matiereId) => noteDe(studentId, matiereId, bulTrimestre);
@@ -1202,9 +1286,10 @@ export default function App() {
   const renderBulletin = () => {
     if (printAllView) return renderImpressionTousBulletins();
 
-    const matieres = matieresConfig[bulClasse] || [];
+    const niveauBul = niveauDe(bulClasse);
+    const matieres = matieresConfig[niveauBul] || [];
     const classeBul = classes.find(c => c.id === bulClasse);
-    const periodesClasse = classeBul?.periodes || [];
+    const periodesClasse = configNiveau(niveauBul).periodes;
     const classeEleves = students.filter(s => s.classeId === bulClasse);
     const classement = classementClasse(bulClasse, bulTrimestre);
 
@@ -1214,7 +1299,7 @@ export default function App() {
         <div style={{ color: C.textSoft, fontSize: 13, marginBottom: 16 }}>Bulletin par trimestre, calculé automatiquement à partir des matières et coefficients configurés pour chaque classe (menu Classes).</div>
 
         <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
-          <Select value={bulClasse} onChange={e => { setBulClasse(e.target.value); setBulEleve(""); setBulTrimestre(classes.find(c => c.id === e.target.value)?.periodes?.[0] || "ANNUEL"); }}>{classes.map(c => <option key={c.id} value={c.id}>{c.nom}</option>)}</Select>
+          <Select value={bulClasse} onChange={e => { setBulClasse(e.target.value); setBulEleve(""); setBulTrimestre(configNiveau(niveauDe(e.target.value)).periodes[0] || "ANNUEL"); }}>{classes.map(c => <option key={c.id} value={c.id}>{c.nom}</option>)}</Select>
           <Select value={bulTrimestre} onChange={e => setBulTrimestre(e.target.value)}>
             {periodesClasse.map(t => <option key={t} value={t}>{t}</option>)}
             <option value="ANNUEL">Bulletin annuel (moyenne des périodes)</option>
@@ -1274,7 +1359,7 @@ export default function App() {
                     <Td style={{ fontWeight: 700 }}>{rangReel != null ? `${rangReel}${rangReel === 1 ? "er" : "e"}${exaequo ? " exo" : ""}` : "—"}</Td>
                     <Td style={{ fontWeight: 600 }}>{c.student.prenoms} {c.student.nom}<div className="f-mono" style={{ fontWeight: 400, fontSize: 10.5, color: C.textSoft }}>Matricule : {c.student.matricule}</div></Td>
                     <Td className="f-mono">{c.moyenne != null ? c.moyenne.toFixed(2) : "—"}</Td>
-                    <Td><Pill_ text={mention(c.moyenne, classeBul?.bareme || 20)} color={c.moyenne >= 12 ? C.sage : c.moyenne >= 10 ? C.brass : C.rose} bg={c.moyenne >= 12 ? C.sageSoft : c.moyenne >= 10 ? C.brassSoft : C.roseSoft} /></Td>
+                    <Td><Pill_ text={mention(c.moyenne, configNiveau(niveauBul).bareme)} color={c.moyenne >= 12 ? C.sage : c.moyenne >= 10 ? C.brass : C.rose} bg={c.moyenne >= 12 ? C.sageSoft : c.moyenne >= 10 ? C.brassSoft : C.roseSoft} /></Td>
                   </tr>
                 );
               })}
@@ -1372,7 +1457,7 @@ export default function App() {
                       return (
                         <tr key={s.id}>
                           <Td className="f-mono">{i + 1}</Td>
-                          <Td style={{ fontWeight: 600 }}>{s.prenoms} {s.nom}</Td>
+                          <Td style={{ fontWeight: 600 }}>{s.prenoms} {s.nom}{(s.montantPersonnalise !== undefined && s.montantPersonnalise !== null && s.montantPersonnalise !== "") && <div><Pill_ text="Boursier" color={C.rose} bg={C.roseSoft} /></div>}</Td>
                           <Td className="f-mono">{s.matricule}</Td>
                           <Td>{s.sexe}</Td><Td>{s.parent}</Td><Td>{s.telephone}</Td>
                           <Td className="f-mono">{fmt(paye)}</Td>
@@ -1424,13 +1509,12 @@ export default function App() {
         {compTab === "tranches" && (
           <div>
             <Card>
-              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>Montant annuel par classe</div>
-              <div style={{ fontSize: 11, color: C.textSoft, marginBottom: 10 }}>Chaque classe a un montant total dû pour l'année, identique pour tous ses élèves.</div>
-              {classes.map(c => (
-                <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderTop: `1px solid ${C.line}` }}>
-                  <div style={{ flex: 1, fontWeight: 600 }}>{c.nom}</div>
-                  <Input type="number" min="0" value={c.montantAnnuel || 0} onChange={e => setMontantAnnuelClasse(c.id, Number(e.target.value) || 0)} style={{ width: 160 }} />
-                  <span style={{ fontSize: 11, color: C.textSoft }}>{config.devise}</span>
+              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>Frais de scolarité par niveau</div>
+              <div style={{ fontSize: 11, color: C.textSoft, marginBottom: 10 }}>Le montant se configure désormais dans le menu <b>Classes</b> (une seule fois par niveau, appliqué à toutes ses sections).</div>
+              {[...new Set(classes.map(c => c.niveau || c.nom))].map(n => (
+                <div key={n} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderTop: `1px solid ${C.line}` }}>
+                  <div style={{ flex: 1, fontWeight: 600 }}>{n}</div>
+                  <div className="f-mono" style={{ fontSize: 12.5 }}>{fmt(configNiveau(n).fraisAnnuel)}</div>
                 </div>
               ))}
             </Card>
@@ -1571,8 +1655,8 @@ export default function App() {
           <Card style={{ padding: 0, overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead><tr><Th>Classe</Th><Th>Montant attendu</Th><Th>Montant Perçu</Th><Th>Taux</Th></tr></thead>
-              <tbody>{classes.map(c => { const n = classStats(c.id).total; const attendu = n * Number(c.montantAnnuel || 0);
-                const percu = students.filter(s => s.classeId === c.id).reduce((s, st) => s + studentPaid(st.id), 0);
+              <tbody>{classes.map(c => { const eleves = students.filter(s => s.classeId === c.id && !s.excluStats); const attendu = eleves.reduce((s, st) => s + studentAttendu(st), 0);
+                const percu = eleves.reduce((s, st) => s + studentPaid(st.id), 0);
                 const taux = attendu ? Math.round(percu / attendu * 100) : 0;
                 return <tr key={c.id}><Td style={{ fontWeight: 600 }}>{c.nom}</Td><Td className="f-mono">{fmt(attendu)}</Td><Td className="f-mono">{fmt(percu)}</Td><Td style={{ color: taux >= 80 ? C.sage : taux >= 40 ? C.brass : C.rose, fontWeight: 700 }}>{taux}%</Td></tr>;
               })}</tbody>
@@ -1635,12 +1719,19 @@ export default function App() {
               <Input placeholder="Catégorie" value={depForm.categorie} onChange={e => setDepForm({ ...depForm, categorie: e.target.value })} />
               <Input type="number" placeholder="Montant" value={depForm.montant} onChange={e => setDepForm({ ...depForm, montant: e.target.value })} />
               <Input placeholder="Description" value={depForm.description} onChange={e => setDepForm({ ...depForm, description: e.target.value })} style={{ flex: 1 }} />
-              <Btn onClick={addDepense}><Plus size={13} /></Btn>
+              <Btn onClick={addDepense}>{depForm.id ? <Check size={13} /> : <Plus size={13} />}</Btn>
+              {depForm.id && <Btn kind="ghost" onClick={() => setDepForm({ categorie: "", montant: "", description: "" })}><X size={13} /></Btn>}
             </div>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead><tr><Th>Date</Th><Th>Catégorie</Th><Th>Description</Th><Th>Montant</Th></tr></thead>
+              <thead><tr><Th>Date</Th><Th>Catégorie</Th><Th>Description</Th><Th>Montant</Th><Th>Actions</Th></tr></thead>
               <tbody>{[...depenses].sort((a, b) => b.date.localeCompare(a.date)).map(d => (
-                <tr key={d.id}><Td>{d.date}</Td><Td style={{ fontWeight: 600 }}>{d.categorie}</Td><Td>{d.description}</Td><Td className="f-mono">{fmt(d.montant)}</Td></tr>
+                <tr key={d.id}>
+                  <Td>{d.date}</Td><Td style={{ fontWeight: 600 }}>{d.categorie}</Td><Td>{d.description}</Td><Td className="f-mono">{fmt(d.montant)}</Td>
+                  <Td><div style={{ display: "flex", gap: 4 }}>
+                    <button onClick={() => setDepForm(d)} style={{ background: "none", border: "none", cursor: "pointer" }}><Pencil size={14} color={C.textSoft} /></button>
+                    <button onClick={() => deleteDepense(d.id)} style={{ background: "none", border: "none", cursor: "pointer" }}><Trash2 size={14} color={C.rose} /></button>
+                  </div></Td>
+                </tr>
               ))}</tbody>
             </table>
           </Card>
@@ -1707,7 +1798,7 @@ export default function App() {
             </Card>
             <Card>
               <div style={{ fontWeight: 700, marginBottom: 4 }}>Taux de recouvrement global</div>
-              <div className="f-mono" style={{ fontSize: 16 }}>{(() => { const attenduTotal = students.reduce((s, st) => s + studentAttendu(st), 0); return attenduTotal ? Math.round(totalEntrees / attenduTotal * 100) : 0; })()}%</div>
+              <div className="f-mono" style={{ fontSize: 16 }}>{(() => { const attenduTotal = students.filter(st => !st.excluStats).reduce((s, st) => s + studentAttendu(st), 0); return attenduTotal ? Math.round(totalEntrees / attenduTotal * 100) : 0; })()}%</div>
               <div style={{ fontSize: 12, color: C.textSoft, marginTop: 4 }}>Élèves redevables (paiement en cours) : <b style={{ color: C.rose }}>{students.filter(s => studentReste(s) > 0).length}</b></div>
             </Card>
           </div>
