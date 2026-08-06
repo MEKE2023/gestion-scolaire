@@ -284,7 +284,7 @@ export default function App() {
   const studentReste = (s) => studentAttendu(s) - studentPaid(s.id);
   const totalEntrees = paiements.reduce((s, p) => { const el = students.find(x => x.id === p.studentId); return el?.excluStats ? s : s + Number(p.montant); }, 0);
   const totalDepenses = depenses.reduce((s, d) => s + Number(d.montant), 0);
-  const totalPaieVersee = paieHist.reduce((s, p) => s + Number(p.montant), 0);
+  const totalPaieVersee = paieHist.reduce((s, p) => staff.some(st => st.id === p.staffId) ? s + Number(p.montant) : s, 0);
   const bilan = totalEntrees - totalDepenses - totalPaieVersee;
 
   /* ---------- Actions Élèves / Classes ---------- */
@@ -482,7 +482,7 @@ export default function App() {
     else setStaff(prev => [...prev, { ...staffForm, id: uid("s") }]);
     setStaffForm(null);
   };
-  const deleteStaff = (id) => setStaff(prev => prev.filter(s => s.id !== id));
+  const deleteStaff = (id) => { setStaff(prev => prev.filter(s => s.id !== id)); setPaieHist(prev => prev.filter(p => p.staffId !== id)); };
   const dejaPayeMois = (staffId, moisLabel) => paieHist.some(p => p.staffId === staffId && p.mois === moisLabel);
   const payerMois = (s, moisLabel) => setPaieHist(prev => [...prev, { id: uid("ph"), staffId: s.id, mois: moisLabel, montant: s.salaire, date: today }]);
   const annulerPaieMois = (staffId, moisLabel) => { if (window.confirm("Annuler cette paie ? Elle redeviendra à payer.")) setPaieHist(prev => prev.filter(p => !(p.staffId === staffId && p.mois === moisLabel))); };
@@ -1796,7 +1796,7 @@ export default function App() {
         {compTab === "rapportMensuel" && (() => {
           const moisLabel = `${MOIS[rapportMoisIndex]} ${rapportMoisAnnee}`;
           const depensesMois = depenses.filter(d => { const dt = new Date(d.date); return dt.getMonth() === rapportMoisIndex && dt.getFullYear() === rapportMoisAnnee; });
-          const paieMois = paieHist.filter(p => p.mois === moisLabel);
+          const paieMois = paieHist.filter(p => p.mois === moisLabel && staff.some(st => st.id === p.staffId));
           const totalDepMois = depensesMois.reduce((s, d) => s + Number(d.montant), 0);
           const totalPaieMois = paieMois.reduce((s, p) => s + Number(p.montant), 0);
           return (
