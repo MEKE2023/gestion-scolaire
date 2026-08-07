@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import {
   Home, Users, Layers, BarChart3, Wallet, PiggyBank, FileText, Lock, LogOut,
   Search, Download, Printer, Plus, Pencil, Trash2, Camera, AlertTriangle,
-  Check, X, ArrowUpDown, GraduationCap, Menu as MenuIcon, Award, BookOpen, ListOrdered, Package, Trophy, Eye, EyeOff,
+  Check, X, ArrowUpDown, GraduationCap, Menu as MenuIcon, Award, BookOpen, ListOrdered, Package, Trophy, Eye, EyeOff, ClipboardCheck,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
@@ -172,18 +172,23 @@ export default function App() {
       if (data && data.data) {
         const d = data.data;
         setClasses(d.classes || initClasses());
-        setStudents(d.students || initStudents());
-        setPaiements(d.paiements || initPaiements());
-        setStaff(d.staff || initStaff());
-        setPaieHist(d.paieHist || initPaieHist());
+        const studentsCharges = d.students || initStudents();
+        const staffCharge = d.staff || initStaff();
+        const idsEleves = new Set(studentsCharges.map(s => s.id));
+        const idsStaff = new Set(staffCharge.map(s => s.id));
+
+        setStudents(studentsCharges);
+        setPaiements((d.paiements || initPaiements()).filter(p => idsEleves.has(p.studentId)));
+        setStaff(staffCharge);
+        setPaieHist((d.paieHist || initPaieHist()).filter(p => idsStaff.has(p.staffId)));
         setDepenses(d.depenses || initDepenses());
         setMatieresConfig(d.matieresConfig || initMatieres());
         setTranchesEcole(d.tranchesEcole || initTranches());
         setConfigNiveaux(d.configNiveaux || {});
-        setNotes(d.notes || initNotes());
+        setNotes((d.notes || initNotes()).filter(n => idsEleves.has(n.studentId)));
         setMateriels(d.materiels || initMateriels());
         setArchives(d.archives || {});
-        setConduites(d.conduites || []);
+        setConduites((d.conduites || []).filter(c => idsEleves.has(c.studentId)));
         {
           const loadedConfig = d.config || { devise: "GNF", etablissement: "GROUPE SCOLAIRE PRIVÉ CARMEL", etablissementAdresse: "", etablissementTels: "", etablissementEmail: "", ire: "", dpe: "", anneeScolaire: "2026-2027", bareme: 20, comptaPassword: "compta2026", logo: null };
           setConfig({
@@ -240,6 +245,8 @@ export default function App() {
 
   /* ---- Saisie de notes ---- */
   const [saisieClasse, setSaisieClasse] = useState("cl1");
+  const [statSaisieClasse, setStatSaisieClasse] = useState("cl1");
+  const [statSaisiePeriode, setStatSaisiePeriode] = useState("");
   const [resultatClasse, setResultatClasse] = useState("cl1");
   const [resultatAnnee, setResultatAnnee] = useState("");
   const [comptaAuthed, setComptaAuthed] = useState(false);
@@ -583,6 +590,7 @@ export default function App() {
     { k: "classes", label: "Classes", icon: Layers },
     { k: "materiels", label: "Matériels didactiques", icon: Package },
     { k: "saisie", label: "Saisie de notes", icon: BookOpen },
+    { k: "statSaisies", label: "Stat. des saisies", icon: ClipboardCheck },
     { k: "bulletin", label: "Bulletin", icon: Award },
     { k: "resultats", label: "Résultats", icon: Trophy },
     { k: "comptabilite", label: "Comptabilité", icon: Wallet },
@@ -596,7 +604,7 @@ export default function App() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 12 }}>
         <Card style={{ textAlign: "center" }}><div className="f-mono" style={{ fontSize: 24, color: C.ink, fontWeight: 600 }}>{students.length}</div><div style={{ fontSize: 11, color: C.textSoft }}>élèves inscrits</div></Card>
         <Card style={{ textAlign: "center" }}><div className="f-mono" style={{ fontSize: 24, color: C.brass, fontWeight: 600 }}>{classes.length}</div><div style={{ fontSize: 11, color: C.textSoft }}>classes</div></Card>
-        <Card style={{ textAlign: "center" }}><div className="f-mono" style={{ fontSize: 24, color: C.sage, fontWeight: 600 }}>{notes.length}</div><div style={{ fontSize: 11, color: C.textSoft }}>notes saisies</div></Card>
+        <Card style={{ textAlign: "center" }}><div className="f-mono" style={{ fontSize: 24, color: C.sage, fontWeight: 600 }}>{notes.filter(n => students.some(s => s.id === n.studentId)).length}</div><div style={{ fontSize: 11, color: C.textSoft }}>notes saisies</div></Card>
         <Card style={{ textAlign: "center" }}>
           <div className="f-mono" style={{ fontSize: 24, color: C.textSoft, fontWeight: 600 }}>••••</div>
           <div style={{ fontSize: 11, color: C.textSoft }}>infos financières réservées au comptable</div>
@@ -1269,6 +1277,67 @@ export default function App() {
             </tbody>
           </table>
         </Card>
+      </div>
+    );
+  };
+
+  /* ----- Statistiques des saisies (repérer les notes manquantes ou à 0) ----- */
+  const renderStatSaisies = () => {
+    const niveauStat = niveauDe(statSaisieClasse);
+    const matieres = matieresConfig[niveauStat] || [];
+    const periodesClasse = configNiveau(niveauStat).periodes;
+    const periodeChoisie = statSaisiePeriode || periodesClasse[0] || "";
+    const eleves = students.filter(s => s.classeId === statSaisieClasse).sort((a, b) => a.nom.localeCompare(b.nom));
+
+    const analyse = eleves.map(s => {
+      const problemes = matieres.map(m => {
+        const n = notes.find(x => x.studentId === s.id && x.matiereId === m.id && x.trimestre === periodeChoisie)?.note;
+        if (n == null) return { matiere: m.nom, etat: "manquante" };
+        if (n === 0) return { matiere: m.nom, etat: "à 0" };
+        return null;
+      }).filter(Boolean);
+      return { student: s, problemes };
+    });
+    const complets = analyse.filter(a => !a.problemes.length);
+    const incomplets = analyse.filter(a => a.problemes.length);
+
+    return (
+      <div>
+        <div className="f-display" style={{ fontSize: 22, color: C.text, fontWeight: 600, marginBottom: 4 }}>Statistiques des saisies</div>
+        <div style={{ color: C.textSoft, fontSize: 13, marginBottom: 16 }}>Repère les élèves dont toutes les notes de la période sont saisies et différentes de zéro dans toutes les matières.</div>
+
+        <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+          <Select value={statSaisieClasse} onChange={e => { setStatSaisieClasse(e.target.value); setStatSaisiePeriode(""); }}>{classes.map(c => <option key={c.id} value={c.id}>{c.nom}</option>)}</Select>
+          <Select value={periodeChoisie} onChange={e => setStatSaisiePeriode(e.target.value)}>{periodesClasse.map(p => <option key={p} value={p}>{p}</option>)}</Select>
+        </div>
+
+        {!matieres.length ? (
+          <Card><div style={{ fontSize: 12, color: C.textSoft }}>Aucune matière configurée pour ce niveau (menu Classes → Configurer notes).</div></Card>
+        ) : !periodeChoisie ? (
+          <Card><div style={{ fontSize: 12, color: C.textSoft }}>Aucune période configurée pour ce niveau.</div></Card>
+        ) : (
+          <div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 12, marginBottom: 16 }}>
+              <Card style={{ textAlign: "center" }}><div className="f-mono" style={{ fontSize: 24, color: C.sage, fontWeight: 600 }}>{complets.length}</div><div style={{ fontSize: 11, color: C.textSoft }}>élèves avec saisie complète</div></Card>
+              <Card style={{ textAlign: "center" }}><div className="f-mono" style={{ fontSize: 24, color: C.rose, fontWeight: 600 }}>{incomplets.length}</div><div style={{ fontSize: 11, color: C.textSoft }}>élèves avec au moins un problème</div></Card>
+              <Card style={{ textAlign: "center" }}><div className="f-mono" style={{ fontSize: 24, color: C.ink, fontWeight: 600 }}>{eleves.length}</div><div style={{ fontSize: 11, color: C.textSoft }}>effectif de la classe</div></Card>
+            </div>
+
+            <div className="f-display" style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Élèves avec des notes manquantes ou à 0</div>
+            {!incomplets.length ? (
+              <Card><div style={{ fontSize: 12.5, color: C.sage, fontWeight: 600 }}>Aucun problème — toutes les notes sont saisies et différentes de zéro pour cette période.</div></Card>
+            ) : incomplets.map(a => (
+              <Card key={a.student.id}>
+                <div style={{ fontWeight: 700, fontSize: 13 }}>{a.student.prenoms} {a.student.nom} <span className="f-mono" style={{ fontWeight: 400, fontSize: 11, color: C.textSoft }}>({a.student.matricule})</span></div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+                  {a.problemes.map((p, i) => (
+                    <Pill_ key={i} text={`${p.matiere} : ${p.etat}`} color={p.etat === "manquante" ? C.brass : C.rose} bg={p.etat === "manquante" ? C.brassSoft : C.roseSoft} />
+                  ))}
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
       </div>
     );
   };
@@ -1984,7 +2053,7 @@ export default function App() {
     );
   };
 
-  const pages = { accueil: renderAccueil, eleves: renderEleves, classes: renderClasses, materiels: renderMateriels, saisie: renderSaisie, bulletin: renderBulletin, resultats: renderResultats, comptabilite: renderComptabilite };
+  const pages = { accueil: renderAccueil, eleves: renderEleves, classes: renderClasses, materiels: renderMateriels, saisie: renderSaisie, statSaisies: renderStatSaisies, bulletin: renderBulletin, resultats: renderResultats, comptabilite: renderComptabilite };
 
   return (
     <div className="f-body" style={{ minHeight: "100vh", background: C.paper, display: "flex" }}>
