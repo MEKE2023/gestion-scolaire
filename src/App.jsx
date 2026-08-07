@@ -265,6 +265,7 @@ export default function App() {
   const [suiviClasse, setSuiviClasse] = useState("cl1");
   const [suiviSort, setSuiviSort] = useState({ champ: "nom", dir: 1 });
   const [redevablesClasse, setRedevablesClasse] = useState("cl1");
+  const [rappelClasse, setRappelClasse] = useState("cl1");
   const [anneeEnAttente, setAnneeEnAttente] = useState(null);
 
   const today = new Date().toISOString().slice(0, 10);
@@ -283,7 +284,7 @@ export default function App() {
     return Number(configNiveau(niveauDe(s?.classeId)).fraisAnnuel || 0);
   };
   const studentReste = (s) => studentAttendu(s) - studentPaid(s.id);
-  const totalEntrees = paiements.reduce((s, p) => { const el = students.find(x => x.id === p.studentId); return el?.excluStats ? s : s + Number(p.montant); }, 0);
+  const totalEntrees = paiements.reduce((s, p) => { const el = students.find(x => x.id === p.studentId); return (!el || el.excluStats) ? s : s + Number(p.montant); }, 0);
   const totalDepenses = depenses.reduce((s, d) => s + Number(d.montant), 0);
   const totalPaieVersee = paieHist.reduce((s, p) => staff.some(st => st.id === p.staffId) ? s + Number(p.montant) : s, 0);
   const bilan = totalEntrees - totalDepenses - totalPaieVersee;
@@ -291,11 +292,26 @@ export default function App() {
   /* ---------- Actions Élèves / Classes ---------- */
   const saveEleve = () => {
     if (!eleveForm.prenoms || !eleveForm.nom) return;
-    if (eleveForm.id) setStudents(prev => prev.map(s => s.id === eleveForm.id ? eleveForm : s));
-    else setStudents(prev => [...prev, { ...eleveForm, id: uid("e") }]);
+    if (eleveForm.id) {
+      const ancien = students.find(s => s.id === eleveForm.id);
+      const changeDeNiveau = ancien && niveauDe(ancien.classeId) !== niveauDe(eleveForm.classeId);
+      if (changeDeNiveau && !window.confirm(`Ce changement fait passer l'élève d'un niveau à un autre (${niveauDe(ancien.classeId)} → ${niveauDe(eleveForm.classeId)}).\n\nSes notes de l'ancien niveau seront définitivement supprimées. Continuer ?`)) return;
+      if (changeDeNiveau) {
+        setNotes(prev => prev.filter(n => n.studentId !== eleveForm.id));
+        setConduites(prev => prev.filter(c => c.studentId !== eleveForm.id));
+      }
+      setStudents(prev => prev.map(s => s.id === eleveForm.id ? eleveForm : s));
+    } else {
+      setStudents(prev => [...prev, { ...eleveForm, id: uid("e") }]);
+    }
     setEleveForm(null);
   };
-  const deleteEleve = (id) => setStudents(prev => prev.filter(s => s.id !== id));
+  const deleteEleve = (id) => {
+    setStudents(prev => prev.filter(s => s.id !== id));
+    setPaiements(prev => prev.filter(p => p.studentId !== id));
+    setNotes(prev => prev.filter(n => n.studentId !== id));
+    setConduites(prev => prev.filter(c => c.studentId !== id));
+  };
   const handlePhoto = (file) => {
     const reader = new FileReader();
     reader.onload = () => setEleveForm(f => ({ ...f, photo: reader.result }));
@@ -1504,7 +1520,7 @@ export default function App() {
     const recu = recuId ? paiements.find(p => p.id === recuId) : null;
     const totalG = students.filter(s => s.sexe === "M").length, totalF = students.filter(s => s.sexe === "F").length;
     const subtabs = [
-      ["effectifs", "Statistiques"], ["suivi", "Suivi par classe"], ["redevables", "Liste des redevables"], ["paiement", "Paiement"],
+      ["effectifs", "Statistiques"], ["suivi", "Suivi par classe"], ["redevables", "Liste des redevables"], ["rappel", "Rappel"], ["paiement", "Paiement"],
       ["stats", "Stats paiement"],
       ["personnel", "Personnel / Paie"], ["depenses", "Dépenses"], ["rapport", "Rapport global"], ["rapportMensuel", "Rapport mensuel"], ["parametres", "Paramètres"],
     ];
@@ -1615,6 +1631,42 @@ export default function App() {
                   </tbody>
                 </table>
               </Card>
+            </div>
+          );
+        })()}
+
+        {compTab === "rappel" && (() => {
+          const liste = students.filter(s => s.classeId === rappelClasse && studentReste(s) > 0);
+          const pages = [];
+          for (let i = 0; i < liste.length; i += 10) pages.push(liste.slice(i, i + 10));
+
+          const Lettre = (s) => (
+            <div style={{ border: `1.5px solid ${C.ink}`, borderRadius: 5, padding: "10px 12px", fontSize: 9.5, lineHeight: 1.5, display: "flex", flexDirection: "column", justifyContent: "space-between", minHeight: 130 }}>
+              <div>
+                <div style={{ textAlign: "center", fontWeight: 700, fontSize: 10.5, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6, borderBottom: `1px solid ${C.line}`, paddingBottom: 4 }}>Lettre de rappel</div>
+                <div>
+                  La direction de <b>{config.etablissement}</b> rappelle que les frais de scolarité de <b>{s.prenoms} {s.nom}</b>, Matricule : <b className="f-mono">{s.matricule}</b>, ne sont pas encore intégralement réglés.
+                </div>
+                <div style={{ marginTop: 5 }}>Montant restant dû : <b style={{ color: C.rose }}>{fmt(studentReste(s))}</b></div>
+              </div>
+              <div style={{ fontSize: 8.5, fontStyle: "italic", color: C.textSoft, marginTop: 6 }}>Merci de bien vouloir régulariser cette situation dans les meilleurs délais.</div>
+            </div>
+          );
+
+          return (
+            <div>
+              <div className="no-print" style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+                <Select value={rappelClasse} onChange={e => setRappelClasse(e.target.value)}>{classes.map(c => <option key={c.id} value={c.id}>{c.nom}</option>)}</Select>
+                <Btn kind="ghost" onClick={() => window.print()}><Printer size={13} /> Imprimer les lettres</Btn>
+              </div>
+              {!liste.length && <Card><div style={{ fontSize: 12, color: C.textSoft }}>Aucun paiement en cours dans cette classe — rien à rappeler.</div></Card>}
+              {pages.map((groupe, pIdx) => (
+                <div key={pIdx} className="print-area" style={{ pageBreakAfter: pIdx < pages.length - 1 ? "always" : "auto", marginBottom: 16 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    {groupe.map(s => <div key={s.id}>{Lettre(s)}</div>)}
+                  </div>
+                </div>
+              ))}
             </div>
           );
         })()}
