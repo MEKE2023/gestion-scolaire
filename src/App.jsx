@@ -1352,7 +1352,7 @@ export default function App() {
     const bareme = configNiveau(niveauEleve).bareme;
     const periodesClasse = configNiveau(niveauEleve).periodes;
     const estAnnuel = bulTrimestre === "ANNUEL";
-    const matieres = matieresConfig[classeId] || [];
+    const matieres = matieresConfig[niveauEleve] || [];
     const noteOf = (matiereId) => noteDe(studentId, matiereId, bulTrimestre);
     let sommeCoef = 0, sommePondere = 0;
     matieres.forEach(m => { const n = noteOf(m.id); if (n != null) { sommeCoef += Number(m.coef); sommePondere += n * Number(m.coef); } });
