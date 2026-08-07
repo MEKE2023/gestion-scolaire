@@ -344,28 +344,36 @@ export default function App() {
     const nouvelle = anneeEnAttente;
     if (!nouvelle || nouvelle === config.anneeScolaire) { setAnneeEnAttente(null); return; }
     const anneeQuittee = config.anneeScolaire;
-    const donneesCibles = archives[nouvelle] || { notes: [], paiements: [], paieHist: [], depenses: [], materiels: [] };
-    setArchives(prev => ({ ...prev, [anneeQuittee]: { notes, paiements, paieHist, depenses, materiels } }));
+    const donneesCibles = archives[nouvelle] || { notes: [], paiements: [], paieHist: [], depenses: [], materiels: [], studentClasses: null };
 
-    // Passage en classe supérieure selon la moyenne annuelle (admis) ou maintien (échec)
-    // Basé sur le "niveau" de la classe (permet plusieurs sections A/B/C par niveau)
-    const niveauxOrdonnes = [];
-    classes.forEach(c => { const niv = c.niveau || c.nom; if (!niveauxOrdonnes.includes(niv)) niveauxOrdonnes.push(niv); });
+    // Étape 1 : mémoriser la classe de chaque élève telle qu'elle était durant l'année qu'on quitte, avant tout passage en classe supérieure
+    const studentClassesQuittee = {};
+    students.forEach(s => { studentClassesQuittee[s.id] = s.classeId; });
+    setArchives(prev => ({ ...prev, [anneeQuittee]: { notes, paiements, paieHist, depenses, materiels, studentClasses: studentClassesQuittee } }));
 
-    setStudents(prev => prev.map(s => {
-      const cl = classes.find(c => c.id === s.classeId);
-      if (!cl) return s;
-      const niveauActuel = cl.niveau || cl.nom;
-      const idxNiveau = niveauxOrdonnes.indexOf(niveauActuel);
-      const moy = moyenneEleve(s.id, s.classeId, "ANNUEL");
-      const admis = moy != null && (moy / (configNiveau(niveauActuel).bareme || 20) * 20) >= 10;
-      if (admis && idxNiveau !== -1 && idxNiveau + 1 < niveauxOrdonnes.length) {
-        const niveauSuivant = niveauxOrdonnes[idxNiveau + 1];
-        const classeSuivante = classes.find(c => (c.niveau || c.nom) === niveauSuivant);
-        if (classeSuivante) return { ...s, classeId: classeSuivante.id };
-      }
-      return s;
-    }));
+    if (donneesCibles.studentClasses) {
+      // On a déjà visité cette année auparavant : on restaure exactement la classe de chacun telle qu'elle était, sans recalculer.
+      setStudents(prev => prev.map(s => donneesCibles.studentClasses[s.id] ? { ...s, classeId: donneesCibles.studentClasses[s.id] } : s));
+    } else {
+      // Première fois qu'on atteint cette année : on calcule le passage en classe supérieure selon la moyenne annuelle.
+      const niveauxOrdonnes = [];
+      classes.forEach(c => { const niv = c.niveau || c.nom; if (!niveauxOrdonnes.includes(niv)) niveauxOrdonnes.push(niv); });
+
+      setStudents(prev => prev.map(s => {
+        const cl = classes.find(c => c.id === s.classeId);
+        if (!cl) return s;
+        const niveauActuel = cl.niveau || cl.nom;
+        const idxNiveau = niveauxOrdonnes.indexOf(niveauActuel);
+        const moy = moyenneEleve(s.id, s.classeId, "ANNUEL");
+        const admis = moy != null && (moy / (configNiveau(niveauActuel).bareme || 20) * 20) >= 10;
+        if (admis && idxNiveau !== -1 && idxNiveau + 1 < niveauxOrdonnes.length) {
+          const niveauSuivant = niveauxOrdonnes[idxNiveau + 1];
+          const classeSuivante = classes.find(c => (c.niveau || c.nom) === niveauSuivant);
+          if (classeSuivante) return { ...s, classeId: classeSuivante.id };
+        }
+        return s;
+      }));
+    }
 
     setNotes(donneesCibles.notes || []);
     setPaiements(donneesCibles.paiements || []);
@@ -1034,35 +1042,38 @@ export default function App() {
     const admisAttestation = resultatsAvecRang.filter(r => r.moyenne != null && (r.moyenne / bareme * 20) >= 10);
 
     const renderAttestationEleve = (r) => (
-      <div style={{ border: `4px double ${C.ink}`, borderRadius: 6, padding: "34px 44px", background: "#fff" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
-          <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-            <Award size={46} color={C.brass} style={{ flexShrink: 0, marginTop: 4 }} />
+      <div style={{ border: `4px double ${C.ink}`, borderRadius: 6, padding: "36px 46px", background: "#fff" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 24 }}>
+          <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+            <div style={{ width: 62, height: 62, borderRadius: "50%", border: `2px solid ${C.brass}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0 }}>
+              {config.logo ? <img src={config.logo} alt="Logo" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <GraduationCap size={28} color={C.brass} />}
+            </div>
             <div>
-              <div className="f-display" style={{ fontSize: 20, fontWeight: 700, color: C.text }}>ATTESTATION DE FIN DE CYCLE</div>
-              <div className="f-display" style={{ fontSize: 15, fontWeight: 700, color: C.text }}>PRÉSCOLAIRE</div>
+              <div className="f-display" style={{ fontSize: 19, fontWeight: 700, color: C.text, lineHeight: 1.25 }}>ATTESTATION DE FIN DE CYCLE</div>
+              <div className="f-display" style={{ fontSize: 14, fontWeight: 700, color: C.brass, letterSpacing: 1 }}>PRÉSCOLAIRE</div>
             </div>
           </div>
-          <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-            <div style={{ fontSize: 10.5, fontWeight: 700, textAlign: "right", lineHeight: 1.5 }}>
+          <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+            <div style={{ fontSize: 10.5, fontWeight: 700, textAlign: "right", lineHeight: 1.6, whiteSpace: "nowrap" }}>
               <div>RÉPUBLIQUE DE GUINÉE</div>
-              <div style={{ fontWeight: 400 }}>Travail – Justice – Solidarité</div>
+              <div style={{ fontWeight: 400, fontSize: 9.5 }}>Travail – Justice – Solidarité</div>
             </div>
-            <div style={{ width: 66, height: 78, border: `1px solid ${C.text}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0 }}>
-              {r.student.photo ? <img src={r.student.photo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 9, color: C.textSoft }}>PHOTO</span>}
+            <div style={{ width: 64, height: 76, border: `1px solid ${C.text}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0 }}>
+              {r.student.photo ? <img src={r.student.photo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 8.5, color: C.textSoft }}>PHOTO</span>}
             </div>
           </div>
         </div>
 
-        <div style={{ background: C.ink, color: "#fff", textAlign: "center", padding: "9px 0", fontWeight: 700, fontSize: 14, margin: "22px 0 0" }}>Nous attestons que l'élève</div>
-        <div style={{ borderBottom: `1px solid ${C.text}`, margin: "0 0 20px" }} />
+        <div style={{ background: C.ink, color: "#fff", textAlign: "center", padding: "10px 0", fontWeight: 700, fontSize: 13.5, letterSpacing: 0.5, margin: "26px 0 24px", borderRadius: 3 }}>NOUS ATTESTONS QUE L'ÉLÈVE</div>
 
-        <div style={{ fontSize: 13, lineHeight: 1.9, color: C.text, marginBottom: 10 }}>
-          <b>Prénoms et Nom :</b> {r.student.prenoms} {r.student.nom}<br />
-          <b>Matricule :</b> {r.student.matricule}
+        <div style={{ textAlign: "center", marginBottom: 22 }}>
+          <div className="f-display" style={{ fontSize: 27, fontWeight: 700, color: C.text, textTransform: "uppercase" }}>{r.student.prenoms} {r.student.nom}</div>
+          <div className="f-mono" style={{ fontSize: 11.5, color: C.textSoft, marginTop: 3 }}>Matricule : {r.student.matricule}</div>
         </div>
-        <div style={{ fontSize: 13, lineHeight: 1.9, color: C.text }}>
-          A terminé(e) avec succès sa formation de préscolaire au sein de notre établissement le <b>{config.etablissement}</b> et est admis(e) pour poursuivre ses études au cycle élémentaire.<br />
+
+        <div style={{ fontSize: 13.5, lineHeight: 2, color: C.text, textAlign: "center", maxWidth: 560, margin: "0 auto" }}>
+          A terminé(e) avec succès sa formation de préscolaire au sein de notre établissement le <b>{config.etablissement}</b>, et est admis(e) pour poursuivre ses études au cycle élémentaire.
+          <br /><br />
           En foi de quoi nous lui décernons cette attestation pour servir et valoir ce que de droit.
         </div>
 
