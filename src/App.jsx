@@ -246,6 +246,7 @@ export default function App() {
   const [comptaPwd, setComptaPwd] = useState(""); const [comptaErr, setComptaErr] = useState(false);
   const [resultatPeriode, setResultatPeriode] = useState("");
   const [satisfecitView, setSatisfecitView] = useState(false);
+  const [attestationView, setAttestationView] = useState(false);
 
   /* ---- Matériels didactiques ---- */
   const [materielForm, setMaterielForm] = useState(null);
@@ -387,10 +388,12 @@ export default function App() {
     setMatiereForm(null);
   };
   const deleteMatiere = (niveau, id) => setMatieresConfig(prev => ({ ...prev, [niveau]: (prev[niveau] || []).filter(m => m.id !== id) }));
-  const setNote = (studentId, matiereId, trimestre, value) => {
+  const setNote = (studentId, matiereId, trimestre, value, bareme = 20) => {
     setNotes(prev => {
       const existing = prev.find(n => n.studentId === studentId && n.matiereId === matiereId && n.trimestre === trimestre);
-      const val = value === "" ? null : Number(value);
+      let val = value === "" ? null : Number(value);
+      if (val != null && val > bareme) val = bareme;
+      if (val != null && val < 0) val = 0;
       if (existing) return prev.map(n => n === existing ? { ...n, note: val } : n);
       return [...prev, { id: uid("n"), studentId, matiereId, trimestre, note: val }];
     });
@@ -894,7 +897,7 @@ export default function App() {
                     {matieres.map(m => periodesClasse.map(p => (
                       <td key={m.id + p} style={{ padding: "4px 5px", textAlign: "center", border: `1px solid ${C.line}` }}>
                         <input type="number" min="0" max={configNiveau(niveauSaisie).bareme} step="0.5" value={noteA(s.id, m.id, p) ?? ""} placeholder="—"
-                          onChange={e => setNote(s.id, m.id, p, e.target.value)}
+                          onChange={e => setNote(s.id, m.id, p, e.target.value, configNiveau(niveauSaisie).bareme)}
                           style={{ width: 42, textAlign: "center", padding: "3px 2px", borderRadius: 5, border: `1px solid ${C.line}`, fontSize: 11.5 }} />
                       </td>
                     )))}
@@ -1027,6 +1030,73 @@ export default function App() {
       return { ...r, rang };
     });
     const top3 = resultatsAvecRang.filter(r => r.rang != null && r.rang <= 3);
+    const estGrandeSection = /grande section/i.test(niveauR || "");
+    const admisAttestation = resultatsAvecRang.filter(r => r.moyenne != null && (r.moyenne / bareme * 20) >= 10);
+
+    const renderAttestationEleve = (r) => (
+      <div style={{ border: `4px double ${C.ink}`, borderRadius: 6, padding: "34px 44px", background: "#fff" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+          <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+            <Award size={46} color={C.brass} style={{ flexShrink: 0, marginTop: 4 }} />
+            <div>
+              <div className="f-display" style={{ fontSize: 20, fontWeight: 700, color: C.text }}>ATTESTATION DE FIN DE CYCLE</div>
+              <div className="f-display" style={{ fontSize: 15, fontWeight: 700, color: C.text }}>PRÉSCOLAIRE</div>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+            <div style={{ fontSize: 10.5, fontWeight: 700, textAlign: "right", lineHeight: 1.5 }}>
+              <div>RÉPUBLIQUE DE GUINÉE</div>
+              <div style={{ fontWeight: 400 }}>Travail – Justice – Solidarité</div>
+            </div>
+            <div style={{ width: 66, height: 78, border: `1px solid ${C.text}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0 }}>
+              {r.student.photo ? <img src={r.student.photo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 9, color: C.textSoft }}>PHOTO</span>}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ background: C.ink, color: "#fff", textAlign: "center", padding: "9px 0", fontWeight: 700, fontSize: 14, margin: "22px 0 0" }}>Nous attestons que l'élève</div>
+        <div style={{ borderBottom: `1px solid ${C.text}`, margin: "0 0 20px" }} />
+
+        <div style={{ fontSize: 13, lineHeight: 1.9, color: C.text, marginBottom: 10 }}>
+          <b>Prénoms et Nom :</b> {r.student.prenoms} {r.student.nom}<br />
+          <b>Matricule :</b> {r.student.matricule}
+        </div>
+        <div style={{ fontSize: 13, lineHeight: 1.9, color: C.text }}>
+          A terminé(e) avec succès sa formation de préscolaire au sein de notre établissement le <b>{config.etablissement}</b> et est admis(e) pour poursuivre ses études au cycle élémentaire.<br />
+          En foi de quoi nous lui décernons cette attestation pour servir et valoir ce que de droit.
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginTop: 70 }}>
+          <div style={{ textAlign: "center", fontSize: 11 }}>
+            <div style={{ width: 160, borderTop: `1px solid ${C.text}`, marginBottom: 4 }} />
+            Date
+          </div>
+          <div style={{ textAlign: "center", fontSize: 11 }}>
+            <div style={{ width: 200, borderTop: `1px solid ${C.text}`, marginBottom: 4 }} />
+            Signature du chef de l'établissement
+            {config.responsable && <div style={{ fontWeight: 700, marginTop: 2 }}>{config.responsable}</div>}
+            {config.etablissementTels && <div>Tél : {config.etablissementTels}</div>}
+          </div>
+        </div>
+      </div>
+    );
+
+    if (attestationView) {
+      return (
+        <div>
+          <div className="no-print" style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+            <Btn kind="ghost" onClick={() => setAttestationView(false)}><X size={13} /> Fermer l'aperçu</Btn>
+            <Btn onClick={() => window.print()}><Printer size={13} /> Imprimer les attestations</Btn>
+          </div>
+          {!admisAttestation.length && <Card><div style={{ fontSize: 12, color: C.textSoft }}>Aucun élève admis (moyenne annuelle manquante) pour cette classe.</div></Card>}
+          {admisAttestation.map((r, i) => (
+            <div key={r.student.id} className="print-area" style={{ pageBreakAfter: i < admisAttestation.length - 1 ? "always" : "auto", marginBottom: 16 }}>
+              {renderAttestationEleve(r)}
+            </div>
+          ))}
+        </div>
+      );
+    }
 
     const renderSatisfecitEleve = (r) => (
       <div style={{ border: `3px double ${C.brass}`, borderRadius: 6, padding: "50px 40px", textAlign: "center", background: "#fff" }}>
@@ -1089,8 +1159,11 @@ export default function App() {
             <option value="ANNUEL">Annuel (moyenne des périodes)</option>
           </Select>
           <Btn kind="ghost" onClick={() => window.print()}><Printer size={13} /> Imprimer</Btn>
-          {periodeChoisie === "ANNUEL" && (
+          {periodeChoisie === "ANNUEL" && !estGrandeSection && (
             <Btn kind="brass" onClick={() => setSatisfecitView(true)}><Award size={13} /> Générer les satisfécits (Top 3)</Btn>
+          )}
+          {periodeChoisie === "ANNUEL" && estGrandeSection && (
+            <Btn kind="brass" onClick={() => setAttestationView(true)}><Award size={13} /> Générer les attestations (admis)</Btn>
           )}
         </div>
 
@@ -1240,7 +1313,7 @@ export default function App() {
                     {estAnnuel
                       ? <span className="f-mono" style={{ fontWeight: 700 }}>{n != null ? n.toFixed(1).replace(/\.0$/, "") : "—"}</span>
                       : <input type="number" min="0" max={bareme} step="0.5" value={n ?? ""} placeholder="—"
-                          onChange={e => setNote(studentId, m.id, bulTrimestre, e.target.value)}
+                          onChange={e => setNote(studentId, m.id, bulTrimestre, e.target.value, bareme)}
                           style={{ width: 50, textAlign: "center", padding: "3px 4px", borderRadius: 6, border: `1px solid ${C.line}`, fontSize: 12.5 }} />}
                   </td>
                   <td className="f-mono" style={{ padding: "6px 8px", textAlign: "center", border: `1px solid ${C.line}` }}>{m.coef}</td>
@@ -1363,6 +1436,10 @@ export default function App() {
             <div>
               <div style={{ fontSize: 11, color: C.textSoft, marginBottom: 4 }}>DPE</div>
               <Input value={config.dpe} onChange={e => setConfig({ ...config, dpe: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: C.textSoft, marginBottom: 4 }}>Titre et nom du/de la responsable (ex : La Directrice Fanta Kaba)</div>
+              <Input value={config.responsable || ""} onChange={e => setConfig({ ...config, responsable: e.target.value })} style={{ width: "100%", boxSizing: "border-box" }} />
             </div>
           </div>
           <div style={{ fontSize: 10.5, color: C.textSoft, marginTop: 10 }}>Le barème, les matières/coefficients et les trimestres/semestres de chaque classe se configurent désormais dans le menu <b>Classes</b> (bouton "Configurer notes").</div>
