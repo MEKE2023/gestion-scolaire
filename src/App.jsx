@@ -126,12 +126,38 @@ function exportCSV(filename, headers, rows) {
   document.body.removeChild(a); URL.revokeObjectURL(url);
 }
 
+function parseCSV(text) {
+  const clean = text.replace(/^\uFEFF/, "");
+  const lignes = clean.split(/\r?\n/).filter(l => l.trim().length);
+  return lignes.map(ligne => {
+    const cellules = []; let cellule = ""; let dansGuillemets = false;
+    for (let i = 0; i < ligne.length; i++) {
+      const c = ligne[i];
+      if (dansGuillemets) {
+        if (c === '"' && ligne[i + 1] === '"') { cellule += '"'; i++; }
+        else if (c === '"') dansGuillemets = false;
+        else cellule += c;
+      } else {
+        if (c === '"') dansGuillemets = true;
+        else if (c === ";") { cellules.push(cellule); cellule = ""; }
+        else cellule += c;
+      }
+    }
+    cellules.push(cellule);
+    return cellules;
+  });
+}
+
 /* ================= App ================= */
 export default function App() {
   const [session, setSession] = useState(null);
   const [authChecking, setAuthChecking] = useState(true);
   const [email, setEmail] = useState(""); const [pwd, setPwd] = useState(""); const [pwdErr, setPwdErr] = useState(false);
   const [dataLoaded, setDataLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(null);
+  const [saveStatus, setSaveStatus] = useState("saved");
+  const [retrySaveTick, setRetrySaveTick] = useState(0);
+  const [retryCount, setRetryCount] = useState(0);
   const [menu, setMenu] = useState("accueil");
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
@@ -167,8 +193,16 @@ export default function App() {
 
   useEffect(() => {
     if (!session) return;
+    setLoadError(null);
     (async () => {
-      const { data } = await supabase.from("app_state").select("data").eq("id", "main").maybeSingle();
+      const { data, error } = await supabase.from("app_state").select("data").eq("id", "main").maybeSingle();
+
+      if (error) {
+        // Vraie erreur (réseau, Supabase indisponible...) : on ne touche à RIEN pour ne jamais écraser les vraies données.
+        setLoadError(error.message || "Erreur de connexion à la base de données.");
+        return;
+      }
+
       if (data && data.data) {
         const d = data.data;
         setClasses(d.classes || initClasses());
@@ -197,6 +231,7 @@ export default function App() {
           });
         }
       } else {
+        // Aucune ligne trouvée ET aucune erreur : c'est vraiment une toute première installation.
         await supabase.from("app_state").insert({
           id: "main",
           data: {
@@ -208,19 +243,28 @@ export default function App() {
       }
       setDataLoaded(true);
     })();
-  }, [session]);
+  }, [session, retryCount]);
 
   useEffect(() => {
     if (!session || !dataLoaded) return;
     const t = setTimeout(() => {
+      setSaveStatus("saving");
       supabase.from("app_state").upsert({
         id: "main",
         data: { classes, students, paiements, staff, paieHist, depenses, matieresConfig, configNiveaux, tranchesEcole, notes, materiels, archives, conduites, config },
         updated_at: new Date().toISOString(),
-      }).then();
+      }).then(({ error }) => {
+        if (error) {
+          setSaveStatus("error");
+          // Nouvelle tentative automatique après 5 secondes si le réseau était juste faible/coupé.
+          setTimeout(() => setRetrySaveTick(x => x + 1), 5000);
+        } else {
+          setSaveStatus("saved");
+        }
+      });
     }, 800);
     return () => clearTimeout(t);
-  }, [classes, students, paiements, staff, paieHist, depenses, matieresConfig, configNiveaux, tranchesEcole, notes, materiels, archives, conduites, config, session, dataLoaded]);
+  }, [classes, students, paiements, staff, paieHist, depenses, matieresConfig, configNiveaux, tranchesEcole, notes, materiels, archives, conduites, config, session, dataLoaded, retrySaveTick]);
 
 
   /* ---- Élèves ---- */
@@ -318,6 +362,86 @@ export default function App() {
     setPaiements(prev => prev.filter(p => p.studentId !== id));
     setNotes(prev => prev.filter(n => n.studentId !== id));
     setConduites(prev => prev.filter(c => c.studentId !== id));
+  };
+  const importElevesCSV = (file) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const lignes = parseCSV(e.target.result);
+      if (lignes.length < 2) { window.alert("Fichier vide ou illisible."); return; }
+      const entetes = lignes[0].map(h => h.trim().toLowerCase());
+      const idx = (nom) => entetes.indexOf(nom);
+      const iPrenoms = idx("prénoms"), iNom = idx("nom"), iSexe = idx("sexe"), iNaissance = idx("naissance"),
+        iMatricule = idx("matricule"), iClasse = idx("classe"), iStatut = idx("statut"), iParent = idx("parent"), iTel = idx("téléphone");
+
+      const nouveaux = []; const classesIntrouvables = new Set(); const dejaExistants = [];
+      for (let i = 1; i < lignes.length; i++) {
+        const l = lignes[i];
+        if (!l.some(v => v && v.trim())) continue;
+        const nomClasse = iClasse >= 0 ? (l[iClasse] || "").trim() : "";
+        const classe = classes.find(c => c.nom.toLowerCase() === nomClasse.toLowerCase());
+        if (nomClasse && !classe) classesIntrouvables.add(nomClasse);
+        const matriculeLigne = iMatricule >= 0 ? (l[iMatricule] || "").trim() : "";
+        if (matriculeLigne && students.some(s => s.matricule.trim().toLowerCase() === matriculeLigne.toLowerCase())) {
+          dejaExistants.push(matriculeLigne);
+          continue;
+        }
+        nouveaux.push({
+          id: uid("e"),
+          prenoms: iPrenoms >= 0 ? (l[iPrenoms] || "").trim() : "",
+          nom: iNom >= 0 ? (l[iNom] || "").trim() : "",
+          sexe: iSexe >= 0 && (l[iSexe] || "").trim().toUpperCase() === "M" ? "M" : "F",
+          naissance: iNaissance >= 0 ? (l[iNaissance] || "").trim() : "",
+          lieuNaissance: "",
+          statut: iStatut >= 0 && (l[iStatut] || "").trim() ? l[iStatut].trim() : "Nouveau",
+          matricule: matriculeLigne,
+          classeId: classe ? classe.id : (classes[0]?.id || ""),
+          parent: iParent >= 0 ? (l[iParent] || "").trim() : "",
+          telephone: iTel >= 0 ? (l[iTel] || "").trim() : "",
+          photo: null,
+        });
+      }
+      if (!nouveaux.length && !dejaExistants.length) { window.alert("Aucun élève trouvé dans ce fichier."); return; }
+      if (!nouveaux.length) { window.alert(`Rien à importer : tous les élèves de ce fichier existent déjà (${dejaExistants.length} ignoré(s), même matricule).`); return; }
+      let msg = `${nouveaux.length} élève(s) prêt(s) à être importé(s).`;
+      if (dejaExistants.length) msg += `\n\nIgnorés (déjà présents avec le même matricule, pour éviter un doublon) : ${dejaExistants.join(", ")}`;
+      if (classesIntrouvables.size) msg += `\n\nAttention : ces classes n'existent pas exactement sous ce nom, les élèves concernés seront mis dans "${classes[0]?.nom}" par défaut (à corriger ensuite) : ${[...classesIntrouvables].join(", ")}`;
+      if (!window.confirm(msg + "\n\nContinuer l'import ?")) return;
+      setStudents(prev => [...prev, ...nouveaux]);
+      window.alert(`${nouveaux.length} élève(s) importé(s) avec succès.`);
+    };
+    reader.readAsText(file, "UTF-8");
+  };
+  const importRegistreCSV = (file) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const lignes = parseCSV(e.target.result);
+      if (lignes.length < 2) { window.alert("Fichier vide ou illisible."); return; }
+      const entetes = lignes[0].map(h => h.trim().toLowerCase());
+      const iMatricule = entetes.indexOf("matricule");
+      const iPaye = entetes.indexOf("montant total payé");
+      if (iMatricule === -1 || iPaye === -1) { window.alert('Le fichier doit contenir au moins les colonnes "Matricule" et "Montant total payé".'); return; }
+
+      const aCreer = []; const introuvables = []; const dejaExistants = [];
+      for (let i = 1; i < lignes.length; i++) {
+        const l = lignes[i];
+        if (!l.some(v => v && v.trim())) continue;
+        const matricule = (l[iMatricule] || "").trim();
+        const montant = Number((l[iPaye] || "0").replace(/[^\d.-]/g, "")) || 0;
+        const eleve = students.find(s => s.matricule.trim().toLowerCase() === matricule.toLowerCase());
+        if (!eleve) { if (matricule) introuvables.push(matricule); continue; }
+        if (studentPaid(eleve.id) > 0) { dejaExistants.push(`${eleve.prenoms} ${eleve.nom}`); continue; }
+        if (montant > 0) aCreer.push({ id: uid("p"), studentId: eleve.id, trancheId: tranchesEcole[0]?.id || "", montant, date: today, mode: "Import (restauration)" });
+      }
+
+      let msg = `${aCreer.length} élève(s) vont recevoir un paiement de restauration correspondant au montant total importé.`;
+      if (dejaExistants.length) msg += `\n\nIgnorés (ont déjà des paiements enregistrés, pour éviter un doublon) : ${dejaExistants.join(", ")}`;
+      if (introuvables.length) msg += `\n\nMatricules introuvables : ${introuvables.join(", ")}`;
+      if (!aCreer.length) { window.alert(msg || "Rien à importer."); return; }
+      if (!window.confirm(msg + "\n\nContinuer l'import ?")) return;
+      setPaiements(prev => [...prev, ...aCreer]);
+      window.alert(`${aCreer.length} paiement(s) de restauration importé(s) avec succès.`);
+    };
+    reader.readAsText(file, "UTF-8");
   };
   const handlePhoto = (file) => {
     const reader = new FileReader();
@@ -580,6 +704,23 @@ export default function App() {
     );
   }
 
+  if (loadError) {
+    return (
+      <div className="f-body" style={{ minHeight: "100vh", background: C.paper, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+        {FONTS}
+        <div style={{ maxWidth: 420, textAlign: "center", background: "#fff", borderRadius: 14, padding: 30, border: `1px solid ${C.line}` }}>
+          <div style={{ fontSize: 40, marginBottom: 10 }}>⚠️</div>
+          <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8, color: C.text }}>Impossible de charger vos données</div>
+          <div style={{ fontSize: 13, color: C.textSoft, marginBottom: 18 }}>
+            Rien n'a été modifié ni effacé — l'application a volontairement bloqué l'accès plutôt que de risquer d'afficher ou d'écraser vos vraies données. Vérifiez votre connexion internet, puis réessayez.
+          </div>
+          <button onClick={() => setRetryCount(c => c + 1)} style={{ background: C.ink, color: "#fff", border: "none", borderRadius: 10, padding: "10px 22px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Réessayer</button>
+          <div style={{ fontSize: 10.5, color: C.textSoft, marginTop: 14 }}>Détail technique : {loadError}</div>
+        </div>
+      </div>
+    );
+  }
+
   if (!dataLoaded) {
     return <div className="f-body" style={{ minHeight: "100vh", background: C.paper, display: "flex", alignItems: "center", justifyContent: "center" }}>{FONTS}Chargement des données…</div>;
   }
@@ -631,6 +772,10 @@ export default function App() {
           <div className="f-display" style={{ fontSize: 22, color: C.text, fontWeight: 600 }}>Élèves</div>
           <div style={{ display: "flex", gap: 8 }}>
             <Btn kind="ghost" onClick={() => exportCSV("eleves.csv", ["Prénoms", "Nom", "Sexe", "Naissance", "Matricule", "Classe", "Statut", "Parent", "Téléphone"], list.map(s => [s.prenoms, s.nom, s.sexe, s.naissance, s.matricule, classes.find(c => c.id === s.classeId)?.nom, s.statut, s.parent, s.telephone]))}><Download size={13} /> Exporter</Btn>
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 10, border: `1px solid ${C.line}`, background: "#fff", fontSize: 13, fontWeight: 600, color: C.text, cursor: "pointer" }}>
+              <Download size={13} style={{ transform: "rotate(180deg)" }} /> Importer CSV
+              <input type="file" accept=".csv" style={{ display: "none" }} onChange={e => e.target.files[0] && importElevesCSV(e.target.files[0])} />
+            </label>
             <Btn onClick={() => setEleveForm({ prenoms: "", nom: "", sexe: "F", naissance: "", lieuNaissance: "", statut: "Nouveau", matricule: "", classeId: classes[0]?.id || "", parent: "", telephone: "", photo: null })}><Plus size={13} /> Ajouter un élève</Btn>
           </div>
         </div>
@@ -1589,7 +1734,7 @@ export default function App() {
     const recu = recuId ? paiements.find(p => p.id === recuId) : null;
     const totalG = students.filter(s => s.sexe === "M").length, totalF = students.filter(s => s.sexe === "F").length;
     const subtabs = [
-      ["effectifs", "Statistiques"], ["suivi", "Suivi par classe"], ["redevables", "Liste des redevables"], ["rappel", "Rappel"], ["paiement", "Paiement"],
+      ["effectifs", "Statistiques"], ["suivi", "Suivi par classe"], ["redevables", "Liste des redevables"], ["registre", "Registre"], ["rappel", "Rappel"], ["paiement", "Paiement"],
       ["stats", "Stats paiement"],
       ["personnel", "Personnel / Paie"], ["depenses", "Dépenses"], ["rapport", "Rapport global"], ["rapportMensuel", "Rapport mensuel"], ["parametres", "Paramètres"],
     ];
@@ -1704,6 +1849,47 @@ export default function App() {
           );
         })()}
 
+        {compTab === "registre" && (() => {
+          const liste = [...students].sort((a, b) => a.nom.localeCompare(b.nom));
+          return (
+            <Card>
+              <div className="no-print" style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+                <div style={{ fontSize: 11.5, color: C.textSoft, maxWidth: 480 }}>Vue globale de tous les élèves, toutes classes confondues — à exporter régulièrement comme copie de sécurité. En cas de besoin, ré-importez ce fichier pour restaurer les montants payés.</div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <Btn kind="ghost" onClick={() => exportCSV(
+                    "registre-paiements.csv",
+                    ["Prénoms et Nom", "Matricule", "Classe", "Parent", "Montant total payé", "Montant total restant"],
+                    liste.map(s => [`${s.prenoms} ${s.nom}`, s.matricule, classes.find(c => c.id === s.classeId)?.nom, s.parent, studentPaid(s.id), studentReste(s) > 0 ? studentReste(s) : 0])
+                  )}><Download size={13} /> Exporter</Btn>
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 10, border: `1px solid ${C.line}`, background: "#fff", fontSize: 13, fontWeight: 600, color: C.text, cursor: "pointer" }}>
+                    <Download size={13} style={{ transform: "rotate(180deg)" }} /> Importer CSV
+                    <input type="file" accept=".csv" style={{ display: "none" }} onChange={e => e.target.files[0] && importRegistreCSV(e.target.files[0])} />
+                  </label>
+                </div>
+              </div>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead><tr><Th>Prénoms et Nom</Th><Th>Matricule</Th><Th>Classe</Th><Th>Parent</Th><Th>Montant payé</Th><Th>Montant restant</Th></tr></thead>
+                <tbody>
+                  {liste.map(s => {
+                    const reste = studentReste(s);
+                    return (
+                      <tr key={s.id}>
+                        <Td style={{ fontWeight: 600 }}>{s.prenoms} {s.nom}</Td>
+                        <Td className="f-mono">{s.matricule}</Td>
+                        <Td>{classes.find(c => c.id === s.classeId)?.nom}</Td>
+                        <Td>{s.parent}</Td>
+                        <Td className="f-mono">{fmt(studentPaid(s.id))}</Td>
+                        <Td className="f-mono" style={{ color: reste > 0 ? C.rose : C.sage, fontWeight: 700 }}>{fmt(reste > 0 ? reste : 0)}</Td>
+                      </tr>
+                    );
+                  })}
+                  {!liste.length && <tr><Td style={{ textAlign: "center", color: C.textSoft }} colSpan={6}>Aucun élève enregistré.</Td></tr>}
+                </tbody>
+              </table>
+            </Card>
+          );
+        })()}
+
         {compTab === "rappel" && (() => {
           const liste = students.filter(s => s.classeId === rappelClasse && studentReste(s) > 0);
           const pages = [];
@@ -1752,7 +1938,7 @@ export default function App() {
               </Select>
               <Select value={paieForm.trancheId} onChange={e => setPaieForm({ ...paieForm, trancheId: e.target.value })} disabled={!paieClasseFiltre}><option value="">Tranche…</option>{tranchesEcole.map(t => <option key={t.id} value={t.id}>{t.nom}</option>)}</Select>
               <Input type="number" placeholder="Montant versé" value={paieForm.montant} onChange={e => setPaieForm({ ...paieForm, montant: e.target.value })} />
-              <Select value={paieForm.mode} onChange={e => setPaieForm({ ...paieForm, mode: e.target.value })}><option>Espèces</option><option>Mobile Money</option><option>Virement</option><option>Chèque</option></Select>
+              <Select value={paieForm.mode} onChange={e => setPaieForm({ ...paieForm, mode: e.target.value })}><option>Espèces</option><option>Orange Money</option><option>Mobile Money (autre)</option><option>Virement</option><option>Chèque</option></Select>
             </div>
             <Btn className="no-print" onClick={enregistrerPaiement}><Check size={13} /> Enregistrer le paiement</Btn>
 
@@ -2058,6 +2244,11 @@ export default function App() {
   return (
     <div className="f-body" style={{ minHeight: "100vh", background: C.paper, display: "flex" }}>
       {FONTS}
+      {saveStatus !== "saved" && (
+        <div className="no-print" style={{ position: "fixed", bottom: 14, right: 14, zIndex: 999, display: "flex", alignItems: "center", gap: 6, padding: "7px 12px", borderRadius: 20, fontSize: 11.5, fontWeight: 700, boxShadow: "0 2px 10px rgba(0,0,0,0.15)", background: saveStatus === "error" ? C.rose : C.brass, color: "#fff" }}>
+          {saveStatus === "error" ? "⚠️ Non enregistré — nouvelle tentative en cours…" : "Enregistrement en cours…"}
+        </div>
+      )}
       <div className="no-print" style={{ width: sidebarOpen ? 210 : 60, background: C.ink, transition: "width .2s", flexShrink: 0, display: "flex", flexDirection: "column" }}>
         <div style={{ padding: 16, display: "flex", alignItems: "center", gap: 8, color: "#fff", cursor: "pointer" }} onClick={() => setSidebarOpen(o => !o)}>
           <MenuIcon size={18} />{sidebarOpen && <span className="f-display" style={{ fontSize: 15, fontWeight: 600 }}>Le Cahier</span>}
