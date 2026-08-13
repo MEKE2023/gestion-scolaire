@@ -289,6 +289,7 @@ export default function App() {
 
   /* ---- Saisie de notes ---- */
   const [saisieClasse, setSaisieClasse] = useState("cl1");
+  const [ficheNotesView, setFicheNotesView] = useState(false);
   const [statSaisieClasse, setStatSaisieClasse] = useState("cl1");
   const [statSaisiePeriode, setStatSaisiePeriode] = useState("");
   const [resultatClasse, setResultatClasse] = useState("cl1");
@@ -530,7 +531,12 @@ export default function App() {
     setConfig(prev => ({ ...prev, anneeScolaire: nouvelle }));
     setAnneeEnAttente(null);
   };
-  const deleteClasse = (id) => { setClasses(prev => prev.filter(c => c.id !== id)); if (classeSelectionnee === id) setClasseSelectionnee(null); };
+  const deleteClasse = (id) => {
+    const n = students.filter(s => s.classeId === id).length;
+    if (n > 0) { window.alert(`Impossible de supprimer cette classe : ${n} élève(s) y sont encore inscrit(s). Déplacez-les d'abord vers une autre classe.`); return; }
+    setClasses(prev => prev.filter(c => c.id !== id));
+    if (classeSelectionnee === id) setClasseSelectionnee(null);
+  };
 
   /* ---------- Actions Bulletin ---------- */
   const saveMatiere = (niveau) => {
@@ -542,7 +548,12 @@ export default function App() {
     });
     setMatiereForm(null);
   };
-  const deleteMatiere = (niveau, id) => setMatieresConfig(prev => ({ ...prev, [niveau]: (prev[niveau] || []).filter(m => m.id !== id) }));
+  const deleteMatiere = (niveau, id) => {
+    const idsEleves = new Set(students.filter(s => niveauDe(s.classeId) === niveau).map(s => s.id));
+    const aDesNotes = notes.some(n => idsEleves.has(n.studentId) && n.matiereId === id);
+    if (aDesNotes && !window.confirm("Des notes existent déjà pour cette matière. Les supprimer ne les efface pas de la base, mais elles deviendront invisibles (bulletin, saisie de notes) tant que cette matière n'est pas recréée à l'identique. Continuer ?")) return;
+    setMatieresConfig(prev => ({ ...prev, [niveau]: (prev[niveau] || []).filter(m => m.id !== id) }));
+  };
   const setNote = (studentId, matiereId, trimestre, value, bareme = 20) => {
     setNotes(prev => {
       const existing = prev.find(n => n.studentId === studentId && n.matiereId === matiereId && n.trimestre === trimestre);
@@ -1031,6 +1042,64 @@ export default function App() {
     const eleves = students.filter(s => s.classeId === saisieClasse).sort((a, b) => a.nom.localeCompare(b.nom));
     const noteA = (studentId, matiereId, periode) => notes.find(n => n.studentId === studentId && n.matiereId === matiereId && n.trimestre === periode)?.note ?? null;
 
+    if (ficheNotesView) {
+      return (
+        <div>
+          <div className="no-print" style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+            <Btn kind="ghost" onClick={() => setFicheNotesView(false)}><X size={13} /> Fermer l'aperçu</Btn>
+            <Btn onClick={() => window.print()}><Printer size={13} /> Imprimer</Btn>
+          </div>
+          <Card className="print-area">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 4 }}>
+              <div style={{ fontSize: 11.5, lineHeight: 1.7, fontWeight: 700 }}>
+                <div>{config.etablissement}</div>
+                {config.etablissementAdresse && <div>{config.etablissementAdresse}</div>}
+                {config.etablissementTels && <div>TÉLS : {config.etablissementTels}</div>}
+                {config.ire && <div>IRE : {config.ire}</div>}
+                {config.dpe && <div>DPE : {config.dpe}</div>}
+              </div>
+              <div style={{ width: 58, height: 58, borderRadius: "50%", border: `2px solid ${C.brass}`, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+                {config.logo ? <img src={config.logo} alt="Logo" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <GraduationCap size={24} color={C.brass} />}
+              </div>
+              <div style={{ fontSize: 11.5, lineHeight: 1.7, fontWeight: 700, textAlign: "right" }}>
+                <div>RÉPUBLIQUE DE GUINÉE</div>
+                <div style={{ fontWeight: 400, fontSize: 10.5 }}>Travail – Justice – Solidarité</div>
+              </div>
+            </div>
+
+            <div className="f-display" style={{ textAlign: "center", fontWeight: 700, fontSize: 22, color: C.text, margin: "18px 0 14px", textTransform: "uppercase" }}>Fiche de notes</div>
+
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 16, fontWeight: 700 }}>
+              <div>Classe : {classeSaisie?.nom}</div>
+              <div>Matière : ……………………………………………………</div>
+            </div>
+
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, border: `1px solid ${C.text}` }}>
+              <thead><tr>
+                {["N°", "Prénoms et Nom", "Matricule", "Sexe", "MCours", "MCompo", "MG"].map(h => (
+                  <th key={h} style={{ background: C.ink, color: "#fff", padding: "8px 6px", textAlign: h === "Prénoms et Nom" ? "left" : "center", fontSize: 11, textTransform: "uppercase", border: `1px solid ${C.ink}` }}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {eleves.map((s, i) => (
+                  <tr key={s.id}>
+                    <td style={{ padding: "10px 6px", textAlign: "center", border: `1px solid ${C.line}` }}>{i + 1}</td>
+                    <td style={{ padding: "10px 6px", fontWeight: 600, border: `1px solid ${C.line}` }}>{s.prenoms} {s.nom}</td>
+                    <td className="f-mono" style={{ padding: "10px 6px", textAlign: "center", border: `1px solid ${C.line}` }}>{s.matricule}</td>
+                    <td style={{ padding: "10px 6px", textAlign: "center", border: `1px solid ${C.line}` }}>{s.sexe}</td>
+                    <td style={{ padding: "10px 6px", border: `1px solid ${C.line}` }}></td>
+                    <td style={{ padding: "10px 6px", border: `1px solid ${C.line}` }}></td>
+                    <td style={{ padding: "10px 6px", border: `1px solid ${C.line}` }}></td>
+                  </tr>
+                ))}
+                {!eleves.length && <tr><td style={{ textAlign: "center", color: C.textSoft, padding: 10, border: `1px solid ${C.line}` }} colSpan={7}>Aucun élève dans cette classe.</td></tr>}
+              </tbody>
+            </table>
+          </Card>
+        </div>
+      );
+    }
+
     return (
       <div>
         <div className="f-display" style={{ fontSize: 22, color: C.text, fontWeight: 600, marginBottom: 4 }}>Saisie de notes</div>
@@ -1043,6 +1112,7 @@ export default function App() {
             ["Nom", "Matricule", ...matieres.flatMap(m => periodesClasse.map(p => `${m.nom} — ${p}`))],
             eleves.map(s => [`${s.prenoms} ${s.nom}`, s.matricule, ...matieres.flatMap(m => periodesClasse.map(p => noteA(s.id, m.id, p) ?? ""))])
           )}><Download size={13} /> Exporter vers Excel</Btn>
+          <Btn kind="ghost" onClick={() => setFicheNotesView(true)}><Printer size={13} /> Imprimer fiche de notes vierge</Btn>
         </div>
 
         {!matieres.length ? (
