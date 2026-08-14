@@ -494,16 +494,16 @@ export default function App() {
     if (!nouvelle || nouvelle === config.anneeScolaire) { setAnneeEnAttente(null); return; }
     const anneeQuittee = config.anneeScolaire;
     const archiveExistante = archives[nouvelle];
-    const donneesCibles = archiveExistante || { notes: [], paiements: [], paieHist: [], depenses: [], materiels: [], studentClasses: null };
+    const donneesCibles = archiveExistante || { notes: [], paiements: [], paieHist: [], depenses: [], materiels: [], studentClasses: null, configNiveaux: null, matieresConfig: null, tranchesEcole: null };
 
     if (archiveExistante && !archiveExistante.studentClasses) {
-      if (!window.confirm(`Attention : les données de ${nouvelle} ont été archivées avant une correction technique importante. La classe de chaque élève pour cette année pourrait ne pas être restaurée fidèlement — vérifiez-les manuellement après le changement si besoin.\n\nContinuer quand même ?`)) return;
+      if (!window.confirm(`Attention : les données de ${nouvelle} ont été archivées avant une correction technique importante. La classe de chaque élève, ainsi que les frais/barème/matières de cette année, pourraient ne pas être restaurés fidèlement — vérifiez-les manuellement après le changement si besoin.\n\nContinuer quand même ?`)) return;
     }
 
-    // Étape 1 : mémoriser la classe de chaque élève telle qu'elle était durant l'année qu'on quitte, avant tout passage en classe supérieure
+    // Étape 1 : mémoriser la classe de chaque élève, ET les réglages (frais, barème, matières, tranches) tels qu'ils étaient durant l'année qu'on quitte
     const studentClassesQuittee = {};
     students.forEach(s => { studentClassesQuittee[s.id] = s.classeId; });
-    setArchives(prev => ({ ...prev, [anneeQuittee]: { notes, paiements, paieHist, depenses, materiels, studentClasses: studentClassesQuittee } }));
+    setArchives(prev => ({ ...prev, [anneeQuittee]: { notes, paiements, paieHist, depenses, materiels, studentClasses: studentClassesQuittee, configNiveaux, matieresConfig, tranchesEcole } }));
 
     if (donneesCibles.studentClasses) {
       // On a déjà visité cette année auparavant : on restaure exactement la classe de chacun telle qu'elle était, sans recalculer.
@@ -534,6 +534,10 @@ export default function App() {
     setPaieHist(donneesCibles.paieHist || []);
     setDepenses(donneesCibles.depenses || []);
     setMateriels(donneesCibles.materiels || []);
+    // Étape 2 : réglages (frais, barème, matières, tranches) — restaurés si l'année a déjà été visitée, sinon on garde ceux en cours comme point de départ de la nouvelle année.
+    if (donneesCibles.configNiveaux) setConfigNiveaux(donneesCibles.configNiveaux);
+    if (donneesCibles.matieresConfig) setMatieresConfig(donneesCibles.matieresConfig);
+    if (donneesCibles.tranchesEcole) setTranchesEcole(donneesCibles.tranchesEcole);
     setConfig(prev => ({ ...prev, anneeScolaire: nouvelle }));
     setAnneeEnAttente(null);
   };
@@ -664,7 +668,7 @@ export default function App() {
     setPaiements(prev => prev.map(x => x.id === id ? { ...x, montant: Number(nouveauMontant) } : x));
     setPaiementEnEdition(null);
   };
-  const supprimerPaiement = (id) => { if (window.confirm("Supprimer définitivement ce paiement ?")) setPaiements(prev => prev.filter(p => p.id !== id)); };
+  const supprimerPaiement = (id) => { if (window.confirm("Supprimer définitivement ce paiement ?")) { setPaiements(prev => prev.filter(p => p.id !== id)); setRecuId(prev => prev === id ? null : prev); } };
   const saveStaff = () => {
     if (!staffForm.nom || !staffForm.salaire) return;
     if (staffForm.id) setStaff(prev => prev.map(s => s.id === staffForm.id ? staffForm : s));
@@ -1068,6 +1072,11 @@ export default function App() {
           <div className="no-print" style={{ display: "flex", gap: 8, marginBottom: 14 }}>
             <Btn kind="ghost" onClick={() => setFicheNotesView(false)}><X size={13} /> Fermer l'aperçu</Btn>
             <Btn onClick={() => window.print()}><Printer size={13} /> Imprimer</Btn>
+            <Btn kind="ghost" onClick={() => exportCSV(
+              `fiche-de-notes-${classeSaisie?.nom}.csv`,
+              ["N°", "Prénoms et Nom", "Matricule", "Sexe", "MCours", "MCompo", "MG"],
+              eleves.map((s, i) => [i + 1, `${s.prenoms} ${s.nom}`, s.matricule, s.sexe, "", "", ""])
+            )}><Download size={13} /> Exporter vers Excel</Btn>
           </div>
           <Card className="print-area">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 4 }}>
@@ -1258,13 +1267,16 @@ export default function App() {
   const renderResultats = () => {
     const classeR = classes.find(c => c.id === resultatClasse);
     const niveauR = niveauDe(resultatClasse);
-    const bareme = configNiveau(niveauR).bareme;
-    const periodesClasse = configNiveau(niveauR).periodes;
     const anneeChoisie = resultatAnnee || config.anneeScolaire;
-    const periodeChoisie = resultatPeriode || periodesClasse[0] || "ANNUEL";
     const anneesDisponibles = [config.anneeScolaire, ...Object.keys(archives)].filter((v, i, a) => a.indexOf(v) === i);
+    const estAncienneAnnee = anneeChoisie !== config.anneeScolaire;
+    const configNiveauSource = estAncienneAnnee ? (archives[anneeChoisie]?.configNiveaux?.[niveauR] || DEFAUT_NIVEAU) : configNiveau(niveauR);
+    const matieresSource = estAncienneAnnee ? (archives[anneeChoisie]?.matieresConfig?.[niveauR] || []) : (matieresConfig[niveauR] || []);
+    const bareme = configNiveauSource.bareme;
+    const periodesClasse = configNiveauSource.periodes;
+    const periodeChoisie = resultatPeriode || periodesClasse[0] || "ANNUEL";
     const notesSource = anneeChoisie === config.anneeScolaire ? notes : (archives[anneeChoisie]?.notes || []);
-    const matieres = matieresConfig[niveauR] || [];
+    const matieres = matieresSource;
 
     const noteDeSrc = (studentId, matiereId, trimestre) => {
       if (trimestre === "ANNUEL") {
