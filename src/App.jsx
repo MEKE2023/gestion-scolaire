@@ -307,6 +307,7 @@ export default function App() {
   /* ---- Comptabilité (+ Finance + Statistiques, sous contrôle du comptable) ---- */
   const [compTab, setCompTab] = useState("effectifs");
   const [paieClasseFiltre, setPaieClasseFiltre] = useState("");
+  const [paieRecherche, setPaieRecherche] = useState("");
   const [paieForm, setPaieForm] = useState({ studentId: "", trancheId: "", montant: "", mode: "Espèces" });
   const [recuId, setRecuId] = useState(null);
   const [staffForm, setStaffForm] = useState(null);
@@ -492,7 +493,12 @@ export default function App() {
     const nouvelle = anneeEnAttente;
     if (!nouvelle || nouvelle === config.anneeScolaire) { setAnneeEnAttente(null); return; }
     const anneeQuittee = config.anneeScolaire;
-    const donneesCibles = archives[nouvelle] || { notes: [], paiements: [], paieHist: [], depenses: [], materiels: [], studentClasses: null };
+    const archiveExistante = archives[nouvelle];
+    const donneesCibles = archiveExistante || { notes: [], paiements: [], paieHist: [], depenses: [], materiels: [], studentClasses: null };
+
+    if (archiveExistante && !archiveExistante.studentClasses) {
+      if (!window.confirm(`Attention : les données de ${nouvelle} ont été archivées avant une correction technique importante. La classe de chaque élève pour cette année pourrait ne pas être restaurée fidèlement — vérifiez-les manuellement après le changement si besoin.\n\nContinuer quand même ?`)) return;
+    }
 
     // Étape 1 : mémoriser la classe de chaque élève telle qu'elle était durant l'année qu'on quitte, avant tout passage en classe supérieure
     const studentClassesQuittee = {};
@@ -645,6 +651,20 @@ export default function App() {
     setPaieForm({ studentId: "", trancheId: "", montant: "", mode: "Espèces" });
     setRecuId(id);
   };
+  const [paiementEnEdition, setPaiementEnEdition] = useState(null);
+  const modifierPaiement = (id, nouveauMontant) => {
+    const p = paiements.find(x => x.id === id);
+    if (!p) return;
+    const el = students.find(s => s.id === p.studentId);
+    const resteHorsCePaiement = studentReste(el) + Number(p.montant);
+    if (Number(nouveauMontant) > resteHorsCePaiement) {
+      window.alert(`Ce montant dépasse ce qui resterait dû pour cet élève (${fmt(resteHorsCePaiement)} maximum). Corrigez avant d'enregistrer.`);
+      return;
+    }
+    setPaiements(prev => prev.map(x => x.id === id ? { ...x, montant: Number(nouveauMontant) } : x));
+    setPaiementEnEdition(null);
+  };
+  const supprimerPaiement = (id) => { if (window.confirm("Supprimer définitivement ce paiement ?")) setPaiements(prev => prev.filter(p => p.id !== id)); };
   const saveStaff = () => {
     if (!staffForm.nom || !staffForm.salaire) return;
     if (staffForm.id) setStaff(prev => prev.map(s => s.id === staffForm.id ? staffForm : s));
@@ -1999,15 +2019,23 @@ export default function App() {
         {compTab === "paiement" && (
           <Card>
             <div className="no-print" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
-              <Select value={paieClasseFiltre} onChange={e => { setPaieClasseFiltre(e.target.value); setPaieForm({ ...paieForm, studentId: "" }); }}>
+              <Select value={paieClasseFiltre} onChange={e => { setPaieClasseFiltre(e.target.value); setPaieForm({ ...paieForm, studentId: "" }); setPaieRecherche(""); }}>
                 <option value="">Classe…</option>{classes.map(c => <option key={c.id} value={c.id}>{c.nom}</option>)}
               </Select>
+              <Input placeholder="Rechercher par nom ou matricule…" value={paieRecherche} onChange={e => setPaieRecherche(e.target.value)} disabled={!paieClasseFiltre} style={{ gridColumn: "span 2" }} />
               <Select value={paieForm.studentId} onChange={e => setPaieForm({ ...paieForm, studentId: e.target.value })} disabled={!paieClasseFiltre}>
                 <option value="">{paieClasseFiltre ? "Élève…" : "Choisissez d'abord une classe"}</option>
-                {students.filter(s => s.classeId === paieClasseFiltre).map(s => <option key={s.id} value={s.id}>{nomMat(s)}</option>)}
+                {students.filter(s => s.classeId === paieClasseFiltre && (!paieRecherche || `${s.prenoms} ${s.nom} ${s.matricule}`.toLowerCase().includes(paieRecherche.toLowerCase()))).map(s => <option key={s.id} value={s.id}>{nomMat(s)}</option>)}
               </Select>
               <Select value={paieForm.trancheId} onChange={e => setPaieForm({ ...paieForm, trancheId: e.target.value })} disabled={!paieClasseFiltre}><option value="">Tranche…</option>{tranchesEcole.map(t => <option key={t.id} value={t.id}>{t.nom}</option>)}</Select>
-              <Input type="number" placeholder="Montant versé" value={paieForm.montant} onChange={e => setPaieForm({ ...paieForm, montant: e.target.value })} />
+              <Input type="number" placeholder="Montant versé" max={paieForm.studentId ? studentReste(students.find(s => s.id === paieForm.studentId)) : undefined} value={paieForm.montant} onChange={e => {
+                const val = e.target.value;
+                if (paieForm.studentId && val !== "") {
+                  const maxAutorise = studentReste(students.find(s => s.id === paieForm.studentId));
+                  if (Number(val) > maxAutorise) { setPaieForm({ ...paieForm, montant: String(maxAutorise) }); return; }
+                }
+                setPaieForm({ ...paieForm, montant: val });
+              }} />
               <Select value={paieForm.mode} onChange={e => setPaieForm({ ...paieForm, mode: e.target.value })}><option>Espèces</option><option>Orange Money</option><option>Mobile Money (autre)</option><option>Virement</option><option>Chèque</option></Select>
             </div>
             <Btn className="no-print" onClick={enregistrerPaiement}><Check size={13} /> Enregistrer le paiement</Btn>
@@ -2019,9 +2047,22 @@ export default function App() {
                   <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 6 }}>Paiements déjà enregistrés pour cet élève</div>
                   {historiqueEleve.length ? historiqueEleve.map(p => { const trancheNom = tranchesEcole.find(t => t.id === p.trancheId)?.nom;
                     return (
-                    <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderTop: `1px solid ${C.line}`, fontSize: 12.5 }}>
-                      <div>{p.date} — {trancheNom} — <span className="f-mono">{fmt(p.montant)}</span> ({p.mode})</div>
-                      <Btn kind="ghost" onClick={() => setRecuId(p.id)}><Printer size={12} /> Imprimer le reçu</Btn>
+                    <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderTop: `1px solid ${C.line}`, fontSize: 12.5, gap: 8, flexWrap: "wrap" }}>
+                      {paiementEnEdition === p.id ? (
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span>{p.date} — {trancheNom} —</span>
+                          <Input type="number" defaultValue={p.montant} id={`edit-montant-${p.id}`} style={{ width: 100 }} />
+                          <Btn kind="ghost" onClick={() => modifierPaiement(p.id, document.getElementById(`edit-montant-${p.id}`).value)}><Check size={12} /></Btn>
+                          <Btn kind="ghost" onClick={() => setPaiementEnEdition(null)}><X size={12} /></Btn>
+                        </div>
+                      ) : (
+                        <div>{p.date} — {trancheNom} — <span className="f-mono">{fmt(p.montant)}</span> ({p.mode})</div>
+                      )}
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <Btn kind="ghost" onClick={() => setRecuId(p.id)}><Printer size={12} /> Reçu</Btn>
+                        <button onClick={() => setPaiementEnEdition(p.id)} style={{ background: "none", border: "none", cursor: "pointer" }}><Pencil size={13} color={C.textSoft} /></button>
+                        <button onClick={() => supprimerPaiement(p.id)} style={{ background: "none", border: "none", cursor: "pointer" }}><Trash2 size={13} color={C.rose} /></button>
+                      </div>
                     </div>
                     );
                   }) : <div style={{ fontSize: 12, color: C.textSoft }}>Aucun paiement enregistré pour le moment.</div>}
@@ -2090,13 +2131,7 @@ export default function App() {
                     <Row label="Reste à payer" value={reste > 0 ? fmt(reste) : "—"} bold />
                   </tbody></table>
 
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginTop: 40 }}>
-                    <div style={{ fontSize: 10.5, fontStyle: "italic", color: C.textSoft }}>Merci de conserver ce reçu.</div>
-                    <div style={{ textAlign: "center", fontSize: 11, color: C.textSoft }}>
-                      <div style={{ width: 160, borderTop: `1px solid ${C.text}`, marginBottom: 4 }} />
-                      Signature / Cachet
-                    </div>
-                  </div>
+                  <div style={{ marginTop: 40, fontSize: 10.5, fontStyle: "italic", color: C.textSoft }}>Merci de conserver ce reçu.</div>
 
                   <Btn kind="ghost" className="no-print" onClick={() => window.print()} style={{ marginTop: 16 }}><Printer size={13} /> Imprimer le reçu</Btn>
                 </div>
