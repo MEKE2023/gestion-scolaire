@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import {
   Home, Users, Layers, BarChart3, Wallet, PiggyBank, FileText, Lock, LogOut,
   Search, Download, Printer, Plus, Pencil, Trash2, Camera, AlertTriangle,
-  Check, X, ArrowUpDown, GraduationCap, Menu as MenuIcon, Award, BookOpen, ListOrdered, Package, Trophy, Eye, EyeOff, ClipboardCheck,
+  Check, X, ArrowUpDown, GraduationCap, Menu as MenuIcon, Award, BookOpen, ListOrdered, Package, Trophy, Eye, EyeOff, ClipboardCheck, Mic,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
@@ -27,7 +27,45 @@ const FONTS = (
     }
   `}</style>
 );
+function analyserPaiementVocal(texte, students, tranchesEcole) {
+  const t = texte.toLowerCase();
+  let studentId = null;
+  students.forEach(s => { if (t.includes(s.prenoms.toLowerCase()) || t.includes(s.nom.toLowerCase())) studentId = s.id; });
+  let trancheId = null;
+  tranchesEcole.forEach(tr => { if (t.includes(tr.nom.toLowerCase())) trancheId = tr.id; });
+  const mMontant = t.match(/(?:pay[ée]?|montant|verse|versé)\s*(\d+)/) || t.match(/(\d+)/);
+  let mode = null;
+  if (t.includes("orange money") || t.includes("orange")) mode = "Orange Money";
+  else if (t.includes("virement")) mode = "Virement";
+  else if (t.includes("chèque") || t.includes("cheque")) mode = "Chèque";
+  else if (t.includes("mobile money")) mode = "Mobile Money (autre)";
+  else if (t.includes("espèce") || t.includes("espece") || t.includes("cash")) mode = "Espèces";
+  return { studentId, trancheId, montant: mMontant ? parseInt(mMontant[1]) : null, mode };
+}
+
+function analyserNoteVocale(texte, students, matieres, periodesClasse) {
+  const t = texte.toLowerCase();
+  let studentId = null;
+  students.forEach(s => { if (t.includes(s.prenoms.toLowerCase()) || t.includes(s.nom.toLowerCase())) studentId = s.id; });
+  let matiereId = null;
+  matieres.forEach(m => { if (t.includes(m.nom.toLowerCase())) matiereId = m.id; });
+  let periode = null;
+  (periodesClasse || []).forEach(p => { if (t.includes(p.toLowerCase())) periode = p; });
+  const mNote = t.match(/(\d+(?:[.,]\d+)?)/);
+  return { studentId, matiereId, periode, note: mNote ? parseFloat(mNote[1].replace(",", ".")) : null };
+}
+
 const uid = (p) => p + Math.random().toString(36).slice(2, 8);
+
+function envoyerWhatsApp(numero, texte) {
+  const saisie = window.prompt("Numéro WhatsApp du destinataire (avec l'indicatif si besoin) :", numero || "");
+  if (saisie === null) return; // annulé
+  const propre = saisie.replace(/[^\d+]/g, "");
+  if (!propre) { window.alert("Aucun numéro valide saisi — envoi annulé."); return; }
+  const numeroFinal = propre.startsWith("+") ? propre.replace("+", "") : (propre.startsWith("224") ? propre : `224${propre.replace(/^0/, "")}`);
+  const url = `https://wa.me/${numeroFinal}?text=${encodeURIComponent(texte)}`;
+  window.open(url, "_blank");
+}
 const nomMat = (s) => s ? `${s.prenoms} ${s.nom} — Matricule : ${s.matricule}` : "—";
 const MOIS = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
 const ANNEES_SCOLAIRES = Array.from({ length: 20 }, (_, i) => `${2026 + i}-${2027 + i}`);
@@ -173,6 +211,7 @@ export default function App() {
   const [notes, setNotes] = useState(initNotes());
   const [materiels, setMateriels] = useState(initMateriels());
   const [archives, setArchives] = useState({});
+  const [corbeille, setCorbeille] = useState([]);
   const [conduites, setConduites] = useState([]);
 
   /* ---- Paramètres généraux (devise, bulletin, mot de passe comptabilité) ---- */
@@ -222,6 +261,7 @@ export default function App() {
         setNotes((d.notes || initNotes()).filter(n => idsEleves.has(n.studentId)));
         setMateriels(d.materiels || initMateriels());
         setArchives(d.archives || {});
+        setCorbeille(d.corbeille || []);
         setConduites((d.conduites || []).filter(c => idsEleves.has(c.studentId)));
         {
           const loadedConfig = d.config || { devise: "GNF", etablissement: "GROUPE SCOLAIRE PRIVÉ CARMEL", etablissementAdresse: "", etablissementTels: "", etablissementEmail: "", ire: "", dpe: "", anneeScolaire: "2026-2027", bareme: 20, comptaPassword: "compta2026", logo: null };
@@ -237,7 +277,7 @@ export default function App() {
           data: {
             classes: initClasses(), students: initStudents(), paiements: initPaiements(),
             staff: initStaff(), paieHist: initPaieHist(), depenses: initDepenses(), matieresConfig: initMatieres(), tranchesEcole: initTranches(),
-            notes: initNotes(), materiels: initMateriels(), archives: {}, conduites: [], configNiveaux: {}, config: { devise: "GNF", etablissement: "GROUPE SCOLAIRE PRIVÉ CARMEL", etablissementAdresse: "", etablissementTels: "", etablissementEmail: "", ire: "", dpe: "", anneeScolaire: "2026-2027", bareme: 20, comptaPassword: "compta2026", logo: null },
+            notes: initNotes(), materiels: initMateriels(), archives: {}, corbeille: [], conduites: [], configNiveaux: {}, config: { devise: "GNF", etablissement: "GROUPE SCOLAIRE PRIVÉ CARMEL", etablissementAdresse: "", etablissementTels: "", etablissementEmail: "", ire: "", dpe: "", anneeScolaire: "2026-2027", bareme: 20, comptaPassword: "compta2026", logo: null },
           },
         });
       }
@@ -251,7 +291,7 @@ export default function App() {
       setSaveStatus("saving");
       supabase.from("app_state").upsert({
         id: "main",
-        data: { classes, students, paiements, staff, paieHist, depenses, matieresConfig, configNiveaux, tranchesEcole, notes, materiels, archives, conduites, config },
+        data: { classes, students, paiements, staff, paieHist, depenses, matieresConfig, configNiveaux, tranchesEcole, notes, materiels, archives, corbeille, conduites, config },
         updated_at: new Date().toISOString(),
       }).then(({ error }) => {
         if (error) {
@@ -264,7 +304,7 @@ export default function App() {
       });
     }, 800);
     return () => clearTimeout(t);
-  }, [classes, students, paiements, staff, paieHist, depenses, matieresConfig, configNiveaux, tranchesEcole, notes, materiels, archives, conduites, config, session, dataLoaded, retrySaveTick]);
+  }, [classes, students, paiements, staff, paieHist, depenses, matieresConfig, configNiveaux, tranchesEcole, notes, materiels, archives, corbeille, conduites, config, session, dataLoaded, retrySaveTick]);
 
 
   /* ---- Élèves ---- */
@@ -310,6 +350,11 @@ export default function App() {
   const [paieRecherche, setPaieRecherche] = useState("");
   const [paieForm, setPaieForm] = useState({ studentId: "", trancheId: "", montant: "", mode: "Espèces" });
   const [recuId, setRecuId] = useState(null);
+  const [ecouteVocalePaiement, setEcouteVocalePaiement] = useState(false);
+  const [transcriptVocalPaiement, setTranscriptVocalPaiement] = useState("");
+  const [ecouteVocaleNote, setEcouteVocaleNote] = useState(false);
+  const [transcriptVocalNote, setTranscriptVocalNote] = useState("");
+  const [noteDicteeEnAttente, setNoteDicteeEnAttente] = useState(null);
   const [staffForm, setStaffForm] = useState(null);
   const [paieAnnee, setPaieAnnee] = useState(new Date().getFullYear());
   const [rapportMoisIndex, setRapportMoisIndex] = useState(new Date().getMonth());
@@ -345,6 +390,10 @@ export default function App() {
   /* ---------- Actions Élèves / Classes ---------- */
   const saveEleve = () => {
     if (!eleveForm.prenoms || !eleveForm.nom) return;
+    if (eleveForm.matricule && students.some(s => s.id !== eleveForm.id && s.matricule.trim().toLowerCase() === eleveForm.matricule.trim().toLowerCase())) {
+      window.alert(`Impossible d'enregistrer : le matricule "${eleveForm.matricule}" est déjà utilisé par un autre élève. Chaque élève doit avoir un matricule unique.`);
+      return;
+    }
     if (eleveForm.id) {
       const ancien = students.find(s => s.id === eleveForm.id);
       const changeDeNiveau = ancien && niveauDe(ancien.classeId) !== niveauDe(eleveForm.classeId);
@@ -359,7 +408,52 @@ export default function App() {
     }
     setEleveForm(null);
   };
+  const envoyerCorbeille = (type, data, label) => setCorbeille(prev => [...prev, { id: uid("cb"), type, data, label, dateSuppression: today }]);
+  const restaurerDepuisCorbeille = (cbId) => {
+    const item = corbeille.find(c => c.id === cbId);
+    if (!item) return;
+    if (item.type === "eleve") {
+      const classeExiste = classes.some(c => c.id === item.data.student.classeId);
+      if (!classeExiste) window.alert("Attention : la classe de cet élève n'existe plus (elle a été supprimée entre-temps). L'élève sera restauré sans classe — pensez à lui en réattribuer une dans le menu Élèves.");
+      setStudents(prev => [...prev, { ...item.data.student, classeId: classeExiste ? item.data.student.classeId : null }]);
+      const trancheIds = new Set(tranchesEcole.map(t => t.id));
+      const paiementsValides = item.data.paiements.map(p => trancheIds.has(p.trancheId) ? p : { ...p, trancheId: null });
+      if (paiementsValides.some(p => p.trancheId === null)) window.alert("Attention : au moins une tranche de paiement liée à cet élève n'existe plus — vérifiez ses paiements après restauration.");
+      setPaiements(prev => [...prev, ...paiementsValides]);
+      setNotes(prev => [...prev, ...item.data.notes]);
+      setConduites(prev => [...prev, ...item.data.conduites]);
+    } else if (item.type === "classe") {
+      setClasses(prev => [...prev, item.data]);
+    } else if (item.type === "staff") {
+      setStaff(prev => [...prev, item.data.staffMember]);
+      setPaieHist(prev => [...prev, ...item.data.paieHist]);
+    } else if (item.type === "paiement") {
+      const eleveExiste = students.some(s => s.id === item.data.studentId);
+      if (!eleveExiste) { window.alert("Impossible de restaurer : l'élève concerné par ce paiement n'existe plus."); return; }
+      const trancheExiste = tranchesEcole.some(t => t.id === item.data.trancheId);
+      if (!trancheExiste) window.alert("Attention : la tranche de paiement concernée n'existe plus — vérifiez ce paiement après restauration.");
+      setPaiements(prev => [...prev, item.data]);
+    } else if (item.type === "depense") {
+      setDepenses(prev => [...prev, item.data]);
+    } else if (item.type === "materiel") {
+      setMateriels(prev => [...prev, item.data]);
+    }
+    setCorbeille(prev => prev.filter(c => c.id !== cbId));
+  };
+  const supprimerDefinitivementCorbeille = (cbId) => {
+    if (!window.confirm("Supprimer définitivement ? Cette action est irréversible, même via la corbeille.")) return;
+    setCorbeille(prev => prev.filter(c => c.id !== cbId));
+  };
+
   const deleteEleve = (id) => {
+    const student = students.find(s => s.id === id);
+    if (!student) return;
+    envoyerCorbeille("eleve", {
+      student,
+      paiements: paiements.filter(p => p.studentId === id),
+      notes: notes.filter(n => n.studentId === id),
+      conduites: conduites.filter(c => c.studentId === id),
+    }, `Élève : ${student.prenoms} ${student.nom}`);
     setStudents(prev => prev.filter(s => s.id !== id));
     setPaiements(prev => prev.filter(p => p.studentId !== id));
     setNotes(prev => prev.filter(n => n.studentId !== id));
@@ -544,6 +638,8 @@ export default function App() {
   const deleteClasse = (id) => {
     const n = students.filter(s => s.classeId === id).length;
     if (n > 0) { window.alert(`Impossible de supprimer cette classe : ${n} élève(s) y sont encore inscrit(s). Déplacez-les d'abord vers une autre classe.`); return; }
+    const classe = classes.find(c => c.id === id);
+    if (classe) envoyerCorbeille("classe", classe, `Classe : ${classe.nom}`);
     setClasses(prev => prev.filter(c => c.id !== id));
     if (classeSelectionnee === id) setClasseSelectionnee(null);
   };
@@ -575,6 +671,28 @@ export default function App() {
     });
   };
   const getConduite = (studentId, trimestre) => conduites.find(c => c.studentId === studentId && c.trimestre === trimestre)?.texte || "";
+  const demarrerEcouteVocaleNote = (matieresDisponibles, periodesDisponibles, bareme) => {
+    const Reco = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Reco) { window.alert("La reconnaissance vocale n'est pas disponible sur ce navigateur. Utilisez Google Chrome pour cette fonctionnalité."); return; }
+    const reco = new Reco();
+    reco.lang = "fr-FR";
+    reco.interimResults = false;
+    reco.onstart = () => setEcouteVocaleNote(true);
+    reco.onend = () => setEcouteVocaleNote(false);
+    reco.onerror = () => setEcouteVocaleNote(false);
+    reco.onresult = (e) => {
+      const texte = e.results[0][0].transcript;
+      setTranscriptVocalNote(texte);
+      const { studentId, matiereId, periode, note } = analyserNoteVocale(texte, students, matieresDisponibles, periodesDisponibles);
+      let noteAjustee = note;
+      if (noteAjustee != null && noteAjustee > bareme) noteAjustee = bareme;
+      setNoteDicteeEnAttente({
+        studentId: studentId || "", matiereId: matiereId || "", periode: periode || (periodesDisponibles[0] || ""),
+        note: noteAjustee != null ? String(noteAjustee) : "",
+      });
+    };
+    reco.start();
+  };
   const setConduiteTexte = (studentId, trimestre, texte) => {
     setConduites(prev => {
       const existing = prev.find(c => c.studentId === studentId && c.trimestre === trimestre);
@@ -656,6 +774,29 @@ export default function App() {
     setRecuId(id);
   };
   const [paiementEnEdition, setPaiementEnEdition] = useState(null);
+  const demarrerEcouteVocalePaiement = () => {
+    const Reco = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Reco) { window.alert("La reconnaissance vocale n'est pas disponible sur ce navigateur. Utilisez Google Chrome pour cette fonctionnalité."); return; }
+    const reco = new Reco();
+    reco.lang = "fr-FR";
+    reco.interimResults = false;
+    reco.onstart = () => setEcouteVocalePaiement(true);
+    reco.onend = () => setEcouteVocalePaiement(false);
+    reco.onerror = () => setEcouteVocalePaiement(false);
+    reco.onresult = (e) => {
+      const texte = e.results[0][0].transcript;
+      setTranscriptVocalPaiement(texte);
+      const { studentId, trancheId, montant, mode } = analyserPaiementVocal(texte, students, tranchesEcole);
+      setPaieForm(prev => ({
+        studentId: studentId || prev.studentId,
+        trancheId: trancheId || prev.trancheId,
+        montant: montant != null ? String(montant) : prev.montant,
+        mode: mode || prev.mode,
+      }));
+      if (studentId) { const el = students.find(s => s.id === studentId); if (el) setPaieClasseFiltre(el.classeId); }
+    };
+    reco.start();
+  };
   const modifierPaiement = (id, nouveauMontant) => {
     const p = paiements.find(x => x.id === id);
     if (!p) return;
@@ -668,14 +809,25 @@ export default function App() {
     setPaiements(prev => prev.map(x => x.id === id ? { ...x, montant: Number(nouveauMontant) } : x));
     setPaiementEnEdition(null);
   };
-  const supprimerPaiement = (id) => { if (window.confirm("Supprimer définitivement ce paiement ?")) { setPaiements(prev => prev.filter(p => p.id !== id)); setRecuId(prev => prev === id ? null : prev); } };
+  const supprimerPaiement = (id) => {
+    if (!window.confirm("Supprimer ce paiement ? Il pourra être restauré depuis la corbeille si besoin.")) return;
+    const paiement = paiements.find(p => p.id === id);
+    if (paiement) { const el = students.find(s => s.id === paiement.studentId); envoyerCorbeille("paiement", paiement, `Paiement de ${el ? `${el.prenoms} ${el.nom}` : "élève inconnu"} — ${fmt(paiement.montant, config.devise)}`); }
+    setPaiements(prev => prev.filter(p => p.id !== id));
+    setRecuId(prev => prev === id ? null : prev);
+  };
   const saveStaff = () => {
     if (!staffForm.nom || !staffForm.salaire) return;
     if (staffForm.id) setStaff(prev => prev.map(s => s.id === staffForm.id ? staffForm : s));
     else setStaff(prev => [...prev, { ...staffForm, id: uid("s") }]);
     setStaffForm(null);
   };
-  const deleteStaff = (id) => { setStaff(prev => prev.filter(s => s.id !== id)); setPaieHist(prev => prev.filter(p => p.staffId !== id)); };
+  const deleteStaff = (id) => {
+    const staffMember = staff.find(s => s.id === id);
+    if (staffMember) envoyerCorbeille("staff", { staffMember, paieHist: paieHist.filter(p => p.staffId === id) }, `Personnel : ${staffMember.nom}`);
+    setStaff(prev => prev.filter(s => s.id !== id));
+    setPaieHist(prev => prev.filter(p => p.staffId !== id));
+  };
   const dejaPayeMois = (staffId, moisLabel) => paieHist.some(p => p.staffId === staffId && p.mois === moisLabel);
   const payerMois = (s, moisLabel) => setPaieHist(prev => [...prev, { id: uid("ph"), staffId: s.id, mois: moisLabel, montant: s.salaire, date: today }]);
   const annulerPaieMois = (staffId, moisLabel) => { if (window.confirm("Annuler cette paie ? Elle redeviendra à payer.")) setPaieHist(prev => prev.filter(p => !(p.staffId === staffId && p.mois === moisLabel))); };
@@ -688,7 +840,11 @@ export default function App() {
     }
     setDepForm({ categorie: "", montant: "", description: "" });
   };
-  const deleteDepense = (id) => setDepenses(prev => prev.filter(d => d.id !== id));
+  const deleteDepense = (id) => {
+    const d = depenses.find(x => x.id === id);
+    if (d) envoyerCorbeille("depense", d, `Dépense : ${d.categorie} — ${fmt(d.montant, config.devise)}`);
+    setDepenses(prev => prev.filter(x => x.id !== id));
+  };
 
   /* ---------- Actions Matériels didactiques ---------- */
   const saveMateriel = () => {
@@ -697,7 +853,11 @@ export default function App() {
     else setMateriels(prev => [...prev, { ...materielForm, id: uid("mat") }]);
     setMaterielForm(null);
   };
-  const deleteMateriel = (id) => setMateriels(prev => prev.filter(m => m.id !== id));
+  const deleteMateriel = (id) => {
+    const m = materiels.find(x => x.id === id);
+    if (m) envoyerCorbeille("materiel", m, `Matériel : ${m.nom}`);
+    setMateriels(prev => prev.filter(x => x.id !== id));
+  };
 
   /* ---------- Logo de l'établissement ---------- */
   const handleLogo = (file) => {
@@ -770,9 +930,38 @@ export default function App() {
     { k: "bulletin", label: "Bulletin", icon: Award },
     { k: "resultats", label: "Résultats", icon: Trophy },
     { k: "comptabilite", label: "Comptabilité", icon: Wallet },
+    { k: "corbeille", label: "Corbeille", icon: Trash2 },
   ];
 
   /* ================= Rendu des menus ================= */
+  const renderCorbeille = () => (
+    <div>
+      <div className="f-display" style={{ fontSize: 22, color: C.text, fontWeight: 600, marginBottom: 4 }}>Corbeille</div>
+      <div style={{ color: C.textSoft, fontSize: 13, marginBottom: 16 }}>Tout élément supprimé apparaît ici et peut être restauré à sa place d'origine.</div>
+      <Card style={{ padding: 0 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead><tr><Th>Date de suppression</Th><Th>Type</Th><Th>Détail</Th><Th>Actions</Th></tr></thead>
+          <tbody>
+            {[...corbeille].reverse().map(item => (
+              <tr key={item.id}>
+                <Td>{item.dateSuppression}</Td>
+                <Td style={{ textTransform: "capitalize" }}>{item.type}</Td>
+                <Td style={{ fontWeight: 600 }}>{item.label}</Td>
+                <Td>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <Btn kind="ghost" onClick={() => restaurerDepuisCorbeille(item.id)}><ArrowUpDown size={13} /> Restaurer</Btn>
+                    <button onClick={() => supprimerDefinitivementCorbeille(item.id)} style={{ background: "none", border: "none", cursor: "pointer" }} title="Supprimer définitivement"><Trash2 size={14} color={C.rose} /></button>
+                  </div>
+                </Td>
+              </tr>
+            ))}
+            {!corbeille.length && <tr><Td colSpan={4} style={{ textAlign: "center", color: C.textSoft }}>La corbeille est vide.</Td></tr>}
+          </tbody>
+        </table>
+      </Card>
+    </div>
+  );
+
   const renderAccueil = () => (
     <div>
       <div className="f-display" style={{ fontSize: 22, color: C.text, fontWeight: 600, marginBottom: 4 }}>Tableau de bord</div>
@@ -1136,13 +1325,49 @@ export default function App() {
 
         <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
           <Select value={saisieClasse} onChange={e => setSaisieClasse(e.target.value)}>{classes.map(c => <option key={c.id} value={c.id}>{c.nom}</option>)}</Select>
-          <Btn kind="ghost" onClick={() => exportCSV(
-            `notes-${classes.find(c => c.id === saisieClasse)?.nom}.csv`,
-            ["Nom", "Matricule", ...matieres.flatMap(m => periodesClasse.map(p => `${m.nom} — ${p}`))],
-            eleves.map(s => [`${s.prenoms} ${s.nom}`, s.matricule, ...matieres.flatMap(m => periodesClasse.map(p => noteA(s.id, m.id, p) ?? ""))])
-          )}><Download size={13} /> Exporter vers Excel</Btn>
-          <Btn kind="ghost" onClick={() => setFicheNotesView(true)}><Printer size={13} /> Imprimer fiche de notes vierge</Btn>
+          <div className="no-print" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button onClick={() => demarrerEcouteVocaleNote(matieres, periodesClasse, configNiveau(niveauSaisie).bareme)} title="Dicter une note à la voix" style={{ background: ecouteVocaleNote ? C.rose : C.brassSoft, color: ecouteVocaleNote ? "#fff" : C.brass, border: "none", borderRadius: 20, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700 }}>
+              <Mic size={13} /> {ecouteVocaleNote ? "Écoute…" : "Dicter une note"}
+            </button>
+            <Btn kind="ghost" onClick={() => exportCSV(
+              `notes-${classes.find(c => c.id === saisieClasse)?.nom}.csv`,
+              ["Nom", "Matricule", ...matieres.flatMap(m => periodesClasse.map(p => `${m.nom} — ${p}`))],
+              eleves.map(s => [`${s.prenoms} ${s.nom}`, s.matricule, ...matieres.flatMap(m => periodesClasse.map(p => noteA(s.id, m.id, p) ?? ""))])
+            )}><Download size={13} /> Exporter vers Excel</Btn>
+            <Btn kind="ghost" onClick={() => setFicheNotesView(true)}><Printer size={13} /> Imprimer fiche de notes vierge</Btn>
+          </div>
         </div>
+
+        {transcriptVocalNote && !noteDicteeEnAttente && (
+          <Card className="no-print"><div style={{ fontSize: 11, color: C.textSoft }}>🎤 « {transcriptVocalNote} » — aucune information exploitable détectée, réessayez ou saisissez manuellement.</div></Card>
+        )}
+
+        {noteDicteeEnAttente && (
+          <Card className="no-print" style={{ background: C.paperCard }}>
+            <div style={{ fontSize: 10.5, color: C.textSoft, marginBottom: 8 }}>🎤 « {transcriptVocalNote} »</div>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8, color: C.brass }}>Vérifiez et ajustez chaque champ si besoin avant de valider :</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8, marginBottom: 10 }}>
+              <Select value={noteDicteeEnAttente.studentId} onChange={e => setNoteDicteeEnAttente({ ...noteDicteeEnAttente, studentId: e.target.value })}>
+                <option value="">Élève…</option>{eleves.map(s => <option key={s.id} value={s.id}>{s.prenoms} {s.nom}</option>)}
+              </Select>
+              <Select value={noteDicteeEnAttente.matiereId} onChange={e => setNoteDicteeEnAttente({ ...noteDicteeEnAttente, matiereId: e.target.value })}>
+                <option value="">Matière…</option>{matieres.map(m => <option key={m.id} value={m.id}>{m.nom}</option>)}
+              </Select>
+              <Select value={noteDicteeEnAttente.periode} onChange={e => setNoteDicteeEnAttente({ ...noteDicteeEnAttente, periode: e.target.value })}>
+                {periodesClasse.map(p => <option key={p} value={p}>{p}</option>)}
+              </Select>
+              <Input type="number" min="0" max={configNiveau(niveauSaisie).bareme} step="0.5" placeholder="Note" value={noteDicteeEnAttente.note} onChange={e => setNoteDicteeEnAttente({ ...noteDicteeEnAttente, note: e.target.value })} />
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Btn onClick={() => {
+                if (!noteDicteeEnAttente.studentId || !noteDicteeEnAttente.matiereId || !noteDicteeEnAttente.periode) { window.alert("Complétez l'élève, la matière et la période avant de valider."); return; }
+                setNote(noteDicteeEnAttente.studentId, noteDicteeEnAttente.matiereId, noteDicteeEnAttente.periode, noteDicteeEnAttente.note, configNiveau(niveauSaisie).bareme);
+                setNoteDicteeEnAttente(null); setTranscriptVocalNote("");
+              }}><Check size={13} /> Valider cette note</Btn>
+              <Btn kind="ghost" onClick={() => { setNoteDicteeEnAttente(null); setTranscriptVocalNote(""); }}><X size={13} /> Annuler</Btn>
+            </div>
+          </Card>
+        )}
 
         {!matieres.length ? (
           <Card><div style={{ fontSize: 12, color: C.textSoft }}>Aucune matière configurée pour cette classe. Rendez-vous dans le menu <b>Classes</b> (bouton "Configurer notes") pour ajouter les matières et coefficients de cette classe.</div></Card>
@@ -1420,8 +1645,13 @@ export default function App() {
           </div>
           {!top3.length && <Card><div style={{ fontSize: 12, color: C.textSoft }}>Aucun élève classé (moyenne annuelle manquante) pour cette classe.</div></Card>}
           {top3.map((r, i) => (
-            <div key={r.student.id} className="print-area" style={{ pageBreakAfter: i < top3.length - 1 ? "always" : "auto", marginBottom: 16 }}>
-              {renderSatisfecitEleve(r)}
+            <div key={r.student.id}>
+              <div className="no-print" style={{ marginBottom: 6 }}>
+                <Btn kind="brass" onClick={() => envoyerWhatsApp(r.student.telephone, `Satisfécit — ${config.etablissement}\nToutes nos félicitations à ${r.student.prenoms} ${r.student.nom}, classé(e) ${r.rang}${r.rang === 1 ? "er" : "e"} avec une moyenne de ${r.moyenne.toFixed(2)} / ${bareme} pour l'année scolaire ${anneeChoisie}.`)}>Envoyer par WhatsApp — {r.student.prenoms} {r.student.nom}</Btn>
+              </div>
+              <div className="print-area" style={{ pageBreakAfter: i < top3.length - 1 ? "always" : "auto", marginBottom: 16 }}>
+                {renderSatisfecitEleve(r)}
+              </div>
             </div>
           ))}
         </div>
@@ -1702,8 +1932,9 @@ export default function App() {
           </div>
         </div>
 
-        <div className="no-print" style={{ marginTop: 14 }}>
+        <div className="no-print" style={{ marginTop: 14, display: "flex", gap: 8 }}>
           <Btn kind="ghost" onClick={() => { setBulEleve(studentId); setTimeout(() => window.print(), 50); }}><Printer size={13} /> Imprimer ce bulletin</Btn>
+          <Btn kind="brass" onClick={() => envoyerWhatsApp(eleve.telephone, `Bulletin de notes — ${config.etablissement}\nÉlève : ${eleve.prenoms} ${eleve.nom}\nClasse : ${classeEleve?.nom}\nPériode : ${estAnnuel ? "Annuel" : bulTrimestre}\nMoyenne : ${moyenne != null ? moyenne.toFixed(2) : "—"} / ${bareme}\nRang : ${rangGeneral(studentId, classeId, bulTrimestre)}\nAppréciation : ${appreciationGenerale(moyenne, bareme)}`)}>Envoyer par WhatsApp</Btn>
         </div>
       </Card>
     );
@@ -2030,6 +2261,17 @@ export default function App() {
 
         {compTab === "paiement" && (
           <Card>
+            <div className="no-print" style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+              <button onClick={demarrerEcouteVocalePaiement} title="Dicter le paiement à la voix" style={{ background: ecouteVocalePaiement ? C.rose : C.brassSoft, color: ecouteVocalePaiement ? "#fff" : C.brass, border: "none", borderRadius: 20, padding: "6px 10px", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700 }}>
+                <Mic size={13} /> {ecouteVocalePaiement ? "Écoute…" : "Dicter le paiement"}
+              </button>
+            </div>
+            {transcriptVocalPaiement && (
+              <div className="no-print" style={{ background: C.paperCard, borderRadius: 6, padding: "6px 8px", marginBottom: 8 }}>
+                <div style={{ fontSize: 10.5, color: C.textSoft }}>🎤 « {transcriptVocalPaiement} »</div>
+                <div style={{ fontSize: 10.5, color: C.brass, fontWeight: 700, marginTop: 2 }}>Vérifiez et ajustez chaque champ si besoin avant d'enregistrer.</div>
+              </div>
+            )}
             <div className="no-print" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
               <Select value={paieClasseFiltre} onChange={e => { setPaieClasseFiltre(e.target.value); setPaieForm({ ...paieForm, studentId: "" }); setPaieRecherche(""); }}>
                 <option value="">Classe…</option>{classes.map(c => <option key={c.id} value={c.id}>{c.nom}</option>)}
@@ -2145,7 +2387,10 @@ export default function App() {
 
                   <div style={{ marginTop: 40, fontSize: 10.5, fontStyle: "italic", color: C.textSoft }}>Merci de conserver ce reçu.</div>
 
-                  <Btn kind="ghost" className="no-print" onClick={() => window.print()} style={{ marginTop: 16 }}><Printer size={13} /> Imprimer le reçu</Btn>
+                  <div className="no-print" style={{ display: "flex", gap: 8, marginTop: 16 }}>
+                    <Btn kind="ghost" onClick={() => window.print()}><Printer size={13} /> Imprimer le reçu</Btn>
+                    <Btn kind="brass" onClick={() => envoyerWhatsApp(el?.telephone, `Reçu de paiement — ${config.etablissement}\nÉlève : ${el?.prenoms} ${el?.nom}\nClasse : ${classeEl?.nom}\nLibellé : ${tranchesEcole.find(t => t.id === recu.trancheId)?.nom}\nMontant payé : ${fmt(paye)}\nDate : ${recu.date}${reste > 0 ? `\nReste à payer : ${fmt(reste)}` : ""}\nMerci de votre confiance.`)}>Envoyer par WhatsApp</Btn>
+                  </div>
                 </div>
               );
             })()}
@@ -2356,7 +2601,7 @@ export default function App() {
     );
   };
 
-  const pages = { accueil: renderAccueil, eleves: renderEleves, classes: renderClasses, materiels: renderMateriels, saisie: renderSaisie, statSaisies: renderStatSaisies, bulletin: renderBulletin, resultats: renderResultats, comptabilite: renderComptabilite };
+  const pages = { accueil: renderAccueil, eleves: renderEleves, classes: renderClasses, materiels: renderMateriels, saisie: renderSaisie, statSaisies: renderStatSaisies, bulletin: renderBulletin, resultats: renderResultats, comptabilite: renderComptabilite, corbeille: renderCorbeille };
 
   return (
     <div className="f-body" style={{ minHeight: "100vh", background: C.paper, display: "flex" }}>
