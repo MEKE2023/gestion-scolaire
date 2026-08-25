@@ -27,33 +27,50 @@ const FONTS = (
     }
   `}</style>
 );
+function extraireMontantVocal(texte) {
+  const t = texte.toLowerCase();
+  // Cas "X million(s) [Y mille] [Z]" — ex: "1 million 200 mille 500"
+  let m = t.match(/(\d+(?:[.,]\d+)?)\s*millions?\s*(?:(\d+(?:[.,]\d+)?)\s*mille)?\s*(\d+)?/);
+  if (m) {
+    const millions = parseFloat(m[1].replace(",", "."));
+    const milliers = m[2] ? parseFloat(m[2].replace(",", ".")) : 0;
+    const reste = m[3] ? parseInt(m[3]) : 0;
+    return Math.round(millions * 1000000 + milliers * 1000 + reste);
+  }
+  // Cas "X mille [Y]" — ex: "800 mille 500" ou "800 mille"
+  m = t.match(/(\d+(?:[.,]\d+)?)\s*mille\s*(\d+)?/);
+  if (m) {
+    const milliers = parseFloat(m[1].replace(",", "."));
+    const reste = m[2] ? parseInt(m[2]) : 0;
+    return Math.round(milliers * 1000 + reste);
+  }
+  // Cas nombre simple déjà complet (ex: "50000" ou "800")
+  const mSimple = t.match(/(\d+(?:[.,]\d+)?)/);
+  return mSimple ? Math.round(parseFloat(mSimple[1].replace(",", "."))) : null;
+}
+
 function analyserPaiementVocal(texte, students, tranchesEcole) {
   const t = texte.toLowerCase();
   let studentId = null;
   students.forEach(s => { if (t.includes(s.prenoms.toLowerCase()) || t.includes(s.nom.toLowerCase())) studentId = s.id; });
   let trancheId = null;
   tranchesEcole.forEach(tr => { if (t.includes(tr.nom.toLowerCase())) trancheId = tr.id; });
-  const mMontant = t.match(/(?:pay[ée]?|montant|verse|versé)\s*(\d+)/) || t.match(/(\d+)/);
+  const montant = extraireMontantVocal(t);
   let mode = null;
   if (t.includes("orange money") || t.includes("orange")) mode = "Orange Money";
   else if (t.includes("virement")) mode = "Virement";
   else if (t.includes("chèque") || t.includes("cheque")) mode = "Chèque";
   else if (t.includes("mobile money")) mode = "Mobile Money (autre)";
   else if (t.includes("espèce") || t.includes("espece") || t.includes("cash")) mode = "Espèces";
-  return { studentId, trancheId, montant: mMontant ? parseInt(mMontant[1]) : null, mode };
+  return { studentId, trancheId, montant, mode };
 }
 
-function analyserNoteVocale(texte, students, matieres, periodesClasse) {
-  const t = texte.toLowerCase();
-  let studentId = null;
-  students.forEach(s => { if (t.includes(s.prenoms.toLowerCase()) || t.includes(s.nom.toLowerCase())) studentId = s.id; });
-  let matiereId = null;
-  matieres.forEach(m => { if (t.includes(m.nom.toLowerCase())) matiereId = m.id; });
-  let periode = null;
-  (periodesClasse || []).forEach(p => { if (t.includes(p.toLowerCase())) periode = p; });
-  const mNote = t.match(/(\d+(?:[.,]\d+)?)/);
-  return { studentId, matiereId, periode, note: mNote ? parseFloat(mNote[1].replace(",", ".")) : null };
+function analyserNotesMultiplesVocal(texte, matieres) {
+  const nombres = (texte.match(/\d+(?:[.,]\d+)?/g) || []).map(n => parseFloat(n.replace(",", ".")));
+  return matieres.map((m, i) => ({ matiereId: m.id, matiereNom: m.nom, note: nombres[i] != null ? nombres[i] : null }));
 }
+
+
 
 const uid = (p) => p + Math.random().toString(36).slice(2, 8);
 
@@ -354,7 +371,9 @@ export default function App() {
   const [transcriptVocalPaiement, setTranscriptVocalPaiement] = useState("");
   const [ecouteVocaleNote, setEcouteVocaleNote] = useState(false);
   const [transcriptVocalNote, setTranscriptVocalNote] = useState("");
-  const [noteDicteeEnAttente, setNoteDicteeEnAttente] = useState(null);
+  const [eleveDictee, setEleveDictee] = useState("");
+  const [periodeDictee, setPeriodeDictee] = useState("");
+  const [notesDicteesEnAttente, setNotesDicteesEnAttente] = useState(null);
   const [staffForm, setStaffForm] = useState(null);
   const [paieAnnee, setPaieAnnee] = useState(new Date().getFullYear());
   const [rapportMoisIndex, setRapportMoisIndex] = useState(new Date().getMonth());
@@ -408,10 +427,13 @@ export default function App() {
     }
     setEleveForm(null);
   };
-  const envoyerCorbeille = (type, data, label) => setCorbeille(prev => [...prev, { id: uid("cb"), type, data, label, dateSuppression: today }]);
+  const envoyerCorbeille = (type, data, label) => setCorbeille(prev => [...prev, { id: uid("cb"), type, data, label, dateSuppression: today, anneeScolaire: config.anneeScolaire }]);
   const restaurerDepuisCorbeille = (cbId) => {
     const item = corbeille.find(c => c.id === cbId);
     if (!item) return;
+    if ((item.type === "eleve" || item.type === "paiement") && item.anneeScolaire && item.anneeScolaire !== config.anneeScolaire) {
+      if (!window.confirm(`Attention : cet élément a été supprimé pendant l'année scolaire ${item.anneeScolaire}, et vous êtes actuellement sur ${config.anneeScolaire}. Ses notes/paiements pourraient ne pas correspondre à l'année en cours. Continuer la restauration quand même ?`)) return;
+    }
     if (item.type === "eleve") {
       const classeExiste = classes.some(c => c.id === item.data.student.classeId);
       if (!classeExiste) window.alert("Attention : la classe de cet élève n'existe plus (elle a été supprimée entre-temps). L'élève sera restauré sans classe — pensez à lui en réattribuer une dans le menu Élèves.");
@@ -671,7 +693,9 @@ export default function App() {
     });
   };
   const getConduite = (studentId, trimestre) => conduites.find(c => c.studentId === studentId && c.trimestre === trimestre)?.texte || "";
-  const demarrerEcouteVocaleNote = (matieresDisponibles, periodesDisponibles, bareme) => {
+  const demarrerEcouteVocaleNote = (matieresDisponibles, bareme) => {
+    if (!eleveDictee || !periodeDictee) { window.alert("Sélectionnez d'abord l'élève et la période avant de dicter les notes."); return; }
+    if (!matieresDisponibles.length) { window.alert("Aucune matière configurée pour cette classe."); return; }
     const Reco = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!Reco) { window.alert("La reconnaissance vocale n'est pas disponible sur ce navigateur. Utilisez Google Chrome pour cette fonctionnalité."); return; }
     const reco = new Reco();
@@ -683,13 +707,10 @@ export default function App() {
     reco.onresult = (e) => {
       const texte = e.results[0][0].transcript;
       setTranscriptVocalNote(texte);
-      const { studentId, matiereId, periode, note } = analyserNoteVocale(texte, students, matieresDisponibles, periodesDisponibles);
-      let noteAjustee = note;
-      if (noteAjustee != null && noteAjustee > bareme) noteAjustee = bareme;
-      setNoteDicteeEnAttente({
-        studentId: studentId || "", matiereId: matiereId || "", periode: periode || (periodesDisponibles[0] || ""),
-        note: noteAjustee != null ? String(noteAjustee) : "",
-      });
+      const resultats = analyserNotesMultiplesVocal(texte, matieresDisponibles).map(r => ({
+        ...r, note: r.note != null ? Math.min(r.note, bareme) : null,
+      }));
+      setNotesDicteesEnAttente(resultats);
     };
     reco.start();
   };
@@ -771,6 +792,7 @@ export default function App() {
     const id = uid("p");
     setPaiements(prev => [...prev, { id, ...paieForm, montant: Number(paieForm.montant), date: today }]);
     setPaieForm({ studentId: "", trancheId: "", montant: "", mode: "Espèces" });
+    setTranscriptVocalPaiement("");
     setRecuId(id);
   };
   const [paiementEnEdition, setPaiementEnEdition] = useState(null);
@@ -940,11 +962,12 @@ export default function App() {
       <div style={{ color: C.textSoft, fontSize: 13, marginBottom: 16 }}>Tout élément supprimé apparaît ici et peut être restauré à sa place d'origine.</div>
       <Card style={{ padding: 0 }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead><tr><Th>Date de suppression</Th><Th>Type</Th><Th>Détail</Th><Th>Actions</Th></tr></thead>
+          <thead><tr><Th>Date de suppression</Th><Th>Année scolaire</Th><Th>Type</Th><Th>Détail</Th><Th>Actions</Th></tr></thead>
           <tbody>
             {[...corbeille].reverse().map(item => (
               <tr key={item.id}>
                 <Td>{item.dateSuppression}</Td>
+                <Td style={item.anneeScolaire && item.anneeScolaire !== config.anneeScolaire ? { color: C.rose, fontWeight: 700 } : {}}>{item.anneeScolaire || "—"}</Td>
                 <Td style={{ textTransform: "capitalize" }}>{item.type}</Td>
                 <Td style={{ fontWeight: 600 }}>{item.label}</Td>
                 <Td>
@@ -955,7 +978,7 @@ export default function App() {
                 </Td>
               </tr>
             ))}
-            {!corbeille.length && <tr><Td colSpan={4} style={{ textAlign: "center", color: C.textSoft }}>La corbeille est vide.</Td></tr>}
+            {!corbeille.length && <tr><Td colSpan={5} style={{ textAlign: "center", color: C.textSoft }}>La corbeille est vide.</Td></tr>}
           </tbody>
         </table>
       </Card>
@@ -1326,9 +1349,6 @@ export default function App() {
         <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
           <Select value={saisieClasse} onChange={e => setSaisieClasse(e.target.value)}>{classes.map(c => <option key={c.id} value={c.id}>{c.nom}</option>)}</Select>
           <div className="no-print" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button onClick={() => demarrerEcouteVocaleNote(matieres, periodesClasse, configNiveau(niveauSaisie).bareme)} title="Dicter une note à la voix" style={{ background: ecouteVocaleNote ? C.rose : C.brassSoft, color: ecouteVocaleNote ? "#fff" : C.brass, border: "none", borderRadius: 20, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700 }}>
-              <Mic size={13} /> {ecouteVocaleNote ? "Écoute…" : "Dicter une note"}
-            </button>
             <Btn kind="ghost" onClick={() => exportCSV(
               `notes-${classes.find(c => c.id === saisieClasse)?.nom}.csv`,
               ["Nom", "Matricule", ...matieres.flatMap(m => periodesClasse.map(p => `${m.nom} — ${p}`))],
@@ -1338,34 +1358,52 @@ export default function App() {
           </div>
         </div>
 
-        {transcriptVocalNote && !noteDicteeEnAttente && (
-          <Card className="no-print"><div style={{ fontSize: 11, color: C.textSoft }}>🎤 « {transcriptVocalNote} » — aucune information exploitable détectée, réessayez ou saisissez manuellement.</div></Card>
-        )}
-
-        {noteDicteeEnAttente && (
+        {matieres.length > 0 && periodesClasse.length > 0 && (
           <Card className="no-print" style={{ background: C.paperCard }}>
-            <div style={{ fontSize: 10.5, color: C.textSoft, marginBottom: 8 }}>🎤 « {transcriptVocalNote} »</div>
-            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8, color: C.brass }}>Vérifiez et ajustez chaque champ si besoin avant de valider :</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8, marginBottom: 10 }}>
-              <Select value={noteDicteeEnAttente.studentId} onChange={e => setNoteDicteeEnAttente({ ...noteDicteeEnAttente, studentId: e.target.value })}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Dicter les notes d'un élève à la voix</div>
+            <div style={{ fontSize: 11, color: C.textSoft, marginBottom: 10 }}>Sélectionnez l'élève et la période, puis dictez chaque note dans l'ordre des {matieres.length} matières ({matieres.map(m => m.nom).join(", ")}) — par exemple : « 10, 12, 13, 5, 9 ».</div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+              <Select value={eleveDictee} onChange={e => setEleveDictee(e.target.value)}>
                 <option value="">Élève…</option>{eleves.map(s => <option key={s.id} value={s.id}>{s.prenoms} {s.nom}</option>)}
               </Select>
-              <Select value={noteDicteeEnAttente.matiereId} onChange={e => setNoteDicteeEnAttente({ ...noteDicteeEnAttente, matiereId: e.target.value })}>
-                <option value="">Matière…</option>{matieres.map(m => <option key={m.id} value={m.id}>{m.nom}</option>)}
+              <Select value={periodeDictee} onChange={e => setPeriodeDictee(e.target.value)}>
+                <option value="">Période…</option>{periodesClasse.map(p => <option key={p} value={p}>{p}</option>)}
               </Select>
-              <Select value={noteDicteeEnAttente.periode} onChange={e => setNoteDicteeEnAttente({ ...noteDicteeEnAttente, periode: e.target.value })}>
-                {periodesClasse.map(p => <option key={p} value={p}>{p}</option>)}
-              </Select>
-              <Input type="number" min="0" max={configNiveau(niveauSaisie).bareme} step="0.5" placeholder="Note" value={noteDicteeEnAttente.note} onChange={e => setNoteDicteeEnAttente({ ...noteDicteeEnAttente, note: e.target.value })} />
+              <button onClick={() => demarrerEcouteVocaleNote(matieres, configNiveau(niveauSaisie).bareme)} title="Dicter les notes à la voix" style={{ background: ecouteVocaleNote ? C.rose : C.brassSoft, color: ecouteVocaleNote ? "#fff" : C.brass, border: "none", borderRadius: 20, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700 }}>
+                <Mic size={13} /> {ecouteVocaleNote ? "Écoute…" : "Dicter les notes"}
+              </button>
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <Btn onClick={() => {
-                if (!noteDicteeEnAttente.studentId || !noteDicteeEnAttente.matiereId || !noteDicteeEnAttente.periode) { window.alert("Complétez l'élève, la matière et la période avant de valider."); return; }
-                setNote(noteDicteeEnAttente.studentId, noteDicteeEnAttente.matiereId, noteDicteeEnAttente.periode, noteDicteeEnAttente.note, configNiveau(niveauSaisie).bareme);
-                setNoteDicteeEnAttente(null); setTranscriptVocalNote("");
-              }}><Check size={13} /> Valider cette note</Btn>
-              <Btn kind="ghost" onClick={() => { setNoteDicteeEnAttente(null); setTranscriptVocalNote(""); }}><X size={13} /> Annuler</Btn>
-            </div>
+
+            {transcriptVocalNote && !notesDicteesEnAttente && (
+              <div style={{ fontSize: 11, color: C.textSoft }}>🎤 « {transcriptVocalNote} » — aucun chiffre détecté, réessayez.</div>
+            )}
+
+            {notesDicteesEnAttente && (
+              <div>
+                <div style={{ fontSize: 10.5, color: C.textSoft, marginBottom: 8 }}>🎤 « {transcriptVocalNote} »</div>
+                <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 8, color: C.brass }}>
+                  Vérifiez et ajustez chaque note si besoin avant de valider — {eleves.find(s => s.id === eleveDictee)?.prenoms} {eleves.find(s => s.id === eleveDictee)?.nom}, {periodeDictee} :
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: `repeat(${notesDicteesEnAttente.length}, 1fr)`, gap: 8, marginBottom: 10 }}>
+                  {notesDicteesEnAttente.map((r, i) => (
+                    <div key={r.matiereId}>
+                      <div style={{ fontSize: 10, color: C.textSoft, marginBottom: 3 }}>{r.matiereNom}</div>
+                      <Input type="number" min="0" max={configNiveau(niveauSaisie).bareme} step="0.5" placeholder="—" value={r.note ?? ""}
+                        onChange={e => setNotesDicteesEnAttente(prev => prev.map((x, j) => j === i ? { ...x, note: e.target.value === "" ? null : Number(e.target.value) } : x))}
+                        style={{ width: "100%", boxSizing: "border-box" }} />
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <Btn onClick={() => {
+                    if (!eleveDictee || !periodeDictee) { window.alert("Sélectionnez l'élève et la période."); return; }
+                    notesDicteesEnAttente.forEach(r => setNote(eleveDictee, r.matiereId, periodeDictee, r.note == null ? "" : String(r.note), configNiveau(niveauSaisie).bareme));
+                    setNotesDicteesEnAttente(null); setTranscriptVocalNote("");
+                  }}><Check size={13} /> Valider ces notes</Btn>
+                  <Btn kind="ghost" onClick={() => { setNotesDicteesEnAttente(null); setTranscriptVocalNote(""); }}><X size={13} /> Annuler</Btn>
+                </div>
+              </div>
+            )}
           </Card>
         )}
 
