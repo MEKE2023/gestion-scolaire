@@ -1,0 +1,36 @@
+{
+  "name": "CARMEL",
+  "short_name": "CARMEL",
+  "description": "Application de gestion scolaire — Groupe Scolaire Privé CARMEL",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#EDF0EA",
+  "theme_color": "#1F3A32",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192-maskable.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
