@@ -75,13 +75,17 @@ function analyserNotesMultiplesVocal(texte, matieres) {
 const uid = (p) => p + Math.random().toString(36).slice(2, 8);
 
 function envoyerWhatsApp(numero, texte) {
+  // On ouvre la fenêtre immédiatement au clic (avant toute boîte de dialogue) pour que le navigateur
+  // ne la bloque jamais comme une pop-up indésirable — surtout important en mode application installée.
+  const fenetre = window.open("", "_blank");
   const saisie = window.prompt("Numéro WhatsApp du destinataire (avec l'indicatif si besoin) :", numero || "");
-  if (saisie === null) return; // annulé
+  if (saisie === null) { if (fenetre) fenetre.close(); return; } // annulé
   const propre = saisie.replace(/[^\d+]/g, "");
-  if (!propre) { window.alert("Aucun numéro valide saisi — envoi annulé."); return; }
+  if (!propre) { window.alert("Aucun numéro valide saisi — envoi annulé."); if (fenetre) fenetre.close(); return; }
   const numeroFinal = propre.startsWith("+") ? propre.replace("+", "") : (propre.startsWith("224") ? propre : `224${propre.replace(/^0/, "")}`);
   const url = `https://wa.me/${numeroFinal}?text=${encodeURIComponent(texte)}`;
-  window.open(url, "_blank");
+  if (fenetre) fenetre.location.href = url;
+  else window.open(url, "_blank"); // filet de sécurité si l'ouverture initiale a échoué
 }
 const nomMat = (s) => s ? `${s.prenoms} ${s.nom} — Matricule : ${s.matricule}` : "—";
 const MOIS = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
