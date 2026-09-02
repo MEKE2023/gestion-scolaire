@@ -233,6 +233,7 @@ export default function App() {
   const [materiels, setMateriels] = useState(initMateriels());
   const [archives, setArchives] = useState({});
   const [corbeille, setCorbeille] = useState([]);
+  const [budgets, setBudgets] = useState([]);
   const [conduites, setConduites] = useState([]);
 
   /* ---- Paramètres généraux (devise, bulletin, mot de passe comptabilité) ---- */
@@ -283,6 +284,7 @@ export default function App() {
         setMateriels(d.materiels || initMateriels());
         setArchives(d.archives || {});
         setCorbeille(d.corbeille || []);
+        setBudgets(d.budgets || []);
         setConduites((d.conduites || []).filter(c => idsEleves.has(c.studentId)));
         {
           const loadedConfig = d.config || { devise: "GNF", etablissement: "GROUPE SCOLAIRE PRIVÉ CARMEL", etablissementAdresse: "", etablissementTels: "", etablissementEmail: "", ire: "", dpe: "", anneeScolaire: "2026-2027", bareme: 20, comptaPassword: "compta2026", logo: null };
@@ -298,7 +300,7 @@ export default function App() {
           data: {
             classes: initClasses(), students: initStudents(), paiements: initPaiements(),
             staff: initStaff(), paieHist: initPaieHist(), depenses: initDepenses(), matieresConfig: initMatieres(), tranchesEcole: initTranches(),
-            notes: initNotes(), materiels: initMateriels(), archives: {}, corbeille: [], conduites: [], configNiveaux: {}, config: { devise: "GNF", etablissement: "GROUPE SCOLAIRE PRIVÉ CARMEL", etablissementAdresse: "", etablissementTels: "", etablissementEmail: "", ire: "", dpe: "", anneeScolaire: "2026-2027", bareme: 20, comptaPassword: "compta2026", logo: null },
+            notes: initNotes(), materiels: initMateriels(), archives: {}, corbeille: [], budgets: [], conduites: [], configNiveaux: {}, config: { devise: "GNF", etablissement: "GROUPE SCOLAIRE PRIVÉ CARMEL", etablissementAdresse: "", etablissementTels: "", etablissementEmail: "", ire: "", dpe: "", anneeScolaire: "2026-2027", bareme: 20, comptaPassword: "compta2026", logo: null },
           },
         });
       }
@@ -312,7 +314,7 @@ export default function App() {
       setSaveStatus("saving");
       supabase.from("app_state").upsert({
         id: "main",
-        data: { classes, students, paiements, staff, paieHist, depenses, matieresConfig, configNiveaux, tranchesEcole, notes, materiels, archives, corbeille, conduites, config },
+        data: { classes, students, paiements, staff, paieHist, depenses, matieresConfig, configNiveaux, tranchesEcole, notes, materiels, archives, corbeille, budgets, conduites, config },
         updated_at: new Date().toISOString(),
       }).then(({ error }) => {
         if (error) {
@@ -325,7 +327,7 @@ export default function App() {
       });
     }, 800);
     return () => clearTimeout(t);
-  }, [classes, students, paiements, staff, paieHist, depenses, matieresConfig, configNiveaux, tranchesEcole, notes, materiels, archives, corbeille, conduites, config, session, dataLoaded, retrySaveTick]);
+  }, [classes, students, paiements, staff, paieHist, depenses, matieresConfig, configNiveaux, tranchesEcole, notes, materiels, archives, corbeille, budgets, conduites, config, session, dataLoaded, retrySaveTick]);
 
 
   /* ---- Élèves ---- */
@@ -350,6 +352,7 @@ export default function App() {
 
   /* ---- Saisie de notes ---- */
   const [saisieClasse, setSaisieClasse] = useState("cl1");
+  const [listeClasseId, setListeClasseId] = useState("cl1");
   const [ficheNotesView, setFicheNotesView] = useState(false);
   const [statSaisieClasse, setStatSaisieClasse] = useState("cl1");
   const [statSaisiePeriode, setStatSaisiePeriode] = useState("");
@@ -668,6 +671,7 @@ export default function App() {
     if (classe) envoyerCorbeille("classe", classe, `Classe : ${classe.nom}`);
     setClasses(prev => prev.filter(c => c.id !== id));
     if (classeSelectionnee === id) setClasseSelectionnee(null);
+    if (listeClasseId === id) setListeClasseId(classes.find(c => c.id !== id)?.id || "");
   };
 
   /* ---------- Actions Bulletin ---------- */
@@ -872,6 +876,17 @@ export default function App() {
     setDepenses(prev => prev.filter(x => x.id !== id));
   };
 
+  /* ---------- Budget (nouvel onglet, purement additif) ---------- */
+  const [budgetForm, setBudgetForm] = useState({ date: today, type: "", montantPrevu: "" });
+  const depensesPourType = (type) => depenses.filter(d => (d.categorie || "").trim().toLowerCase() === (type || "").trim().toLowerCase()).reduce((s, d) => s + Number(d.montant || 0), 0);
+  const saveBudget = () => {
+    if (!budgetForm.type || budgetForm.montantPrevu === "") return;
+    if (budgetForm.id) setBudgets(prev => prev.map(b => b.id === budgetForm.id ? { ...budgetForm, montantPrevu: Number(budgetForm.montantPrevu) } : b));
+    else setBudgets(prev => [...prev, { ...budgetForm, id: uid("bg"), montantPrevu: Number(budgetForm.montantPrevu) }]);
+    setBudgetForm({ date: today, type: "", montantPrevu: "" });
+  };
+  const deleteBudget = (id) => { if (window.confirm("Supprimer cette ligne de budget ? (les dépenses déjà enregistrées ne sont pas affectées)")) setBudgets(prev => prev.filter(b => b.id !== id)); };
+
   /* ---------- Actions Matériels didactiques ---------- */
   const saveMateriel = () => {
     if (!materielForm.nom || !materielForm.quantite) return;
@@ -950,6 +965,7 @@ export default function App() {
     { k: "accueil", label: "Accueil", icon: Home },
     { k: "eleves", label: "Élèves", icon: Users },
     { k: "classes", label: "Classes", icon: Layers },
+    { k: "listeClasse", label: "Liste de la classe", icon: ListOrdered },
     { k: "materiels", label: "Matériels didactiques", icon: Package },
     { k: "saisie", label: "Saisie de notes", icon: BookOpen },
     { k: "statSaisies", label: "Stat. des saisies", icon: ClipboardCheck },
@@ -960,6 +976,72 @@ export default function App() {
   ];
 
   /* ================= Rendu des menus ================= */
+  const renderListeClasse = () => {
+    if (!classes.length) return <Card><div style={{ textAlign: "center", color: C.textSoft, padding: 20 }}>Aucune classe n'existe encore — créez-en une dans le menu Classes.</div></Card>;
+    const classeListe = classes.find(c => c.id === listeClasseId) || classes[0];
+    const elevesListe = students.filter(s => s.classeId === classeListe.id && paiements.some(p => p.studentId === s.id)).sort((a, b) => a.nom.localeCompare(b.nom));
+    return (
+      <div>
+        <div className="no-print" style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+          <Select value={classeListe.id} onChange={e => setListeClasseId(e.target.value)}>{classes.map(c => <option key={c.id} value={c.id}>{c.nom}</option>)}</Select>
+          <Btn onClick={() => window.print()}><Printer size={13} /> Imprimer</Btn>
+          <Btn kind="ghost" onClick={() => exportCSV(
+            `liste-${classeListe?.nom}.csv`,
+            ["N°", "Prénoms et Nom", "Matricule", "Sexe", "Contact parent"],
+            elevesListe.map((s, i) => [i + 1, `${s.prenoms} ${s.nom}`, s.matricule, s.sexe, s.telephone])
+          )}><Download size={13} /> Exporter vers Excel</Btn>
+        </div>
+        <div className="no-print" style={{ fontSize: 11, color: C.textSoft, marginBottom: 10 }}>Seuls les élèves ayant déjà effectué au moins un versement à la comptabilité apparaissent dans cette liste.</div>
+
+        <Card className="print-area">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 4 }}>
+            <div style={{ fontSize: 11.5, lineHeight: 1.7, fontWeight: 700 }}>
+              <div>{config.etablissement}</div>
+              {config.etablissementAdresse && <div>{config.etablissementAdresse}</div>}
+              {config.etablissementTels && <div>TÉLS : {config.etablissementTels}</div>}
+              {config.ire && <div>IRE : {config.ire}</div>}
+              {config.dpe && <div>DPE : {config.dpe}</div>}
+            </div>
+            <div style={{ width: 58, height: 58, borderRadius: "50%", border: `2px solid ${C.brass}`, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+              {config.logo ? <img src={config.logo} alt="Logo" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <GraduationCap size={24} color={C.brass} />}
+            </div>
+            <div style={{ fontSize: 11.5, lineHeight: 1.7, fontWeight: 700, textAlign: "right" }}>
+              <div>RÉPUBLIQUE DE GUINÉE</div>
+              <div style={{ fontWeight: 400, fontSize: 10.5 }}>Travail – Justice – Solidarité</div>
+            </div>
+          </div>
+
+          <div className="f-display" style={{ textAlign: "center", fontWeight: 700, fontSize: 22, color: C.text, margin: "18px 0 14px", textTransform: "uppercase" }}>
+            Les élèves de la {classeListe?.nom}
+          </div>
+
+          <table style={{ width: "100%", borderCollapse: "collapse", border: `1.5px solid ${C.ink}` }}>
+            <thead><tr>
+              <th style={{ background: C.ink, color: "#fff", padding: "8px 10px", fontSize: 11, textTransform: "uppercase", border: `1px solid ${C.ink}`, textAlign: "center", width: 50 }}>N°</th>
+              <th style={{ background: C.ink, color: "#fff", padding: "8px 10px", fontSize: 11, textTransform: "uppercase", border: `1px solid ${C.ink}`, textAlign: "left" }}>Prénoms et Nom</th>
+              <th style={{ background: C.ink, color: "#fff", padding: "8px 10px", fontSize: 11, textTransform: "uppercase", border: `1px solid ${C.ink}` }}>Matricule</th>
+              <th style={{ background: C.ink, color: "#fff", padding: "8px 10px", fontSize: 11, textTransform: "uppercase", border: `1px solid ${C.ink}`, width: 70 }}>Sexe</th>
+              <th style={{ background: C.ink, color: "#fff", padding: "8px 10px", fontSize: 11, textTransform: "uppercase", border: `1px solid ${C.ink}` }}>Contact parent</th>
+            </tr></thead>
+            <tbody>
+              {elevesListe.map((s, i) => (
+                <tr key={s.id}>
+                  <td style={{ padding: "7px 10px", fontSize: 12.5, border: `1px solid ${C.line}`, textAlign: "center" }}>{i + 1}</td>
+                  <td style={{ padding: "7px 10px", fontSize: 12.5, border: `1px solid ${C.line}`, fontWeight: 600 }}>{s.prenoms} {s.nom}</td>
+                  <td className="f-mono" style={{ padding: "7px 10px", fontSize: 12.5, border: `1px solid ${C.line}`, textAlign: "center" }}>{s.matricule}</td>
+                  <td style={{ padding: "7px 10px", fontSize: 12.5, border: `1px solid ${C.line}`, textAlign: "center" }}>{s.sexe}</td>
+                  <td style={{ padding: "7px 10px", fontSize: 12.5, border: `1px solid ${C.line}` }}>{s.telephone}</td>
+                </tr>
+              ))}
+              {!elevesListe.length && <tr><td colSpan={5} style={{ padding: 20, textAlign: "center", color: C.textSoft, border: `1px solid ${C.line}` }}>Aucun élève de cette classe n'a encore effectué de versement.</td></tr>}
+            </tbody>
+          </table>
+          <div style={{ marginTop: 14, fontSize: 11, fontWeight: 700 }}>Effectif (ayant versé) : {elevesListe.length} élève(s)</div>
+        </Card>
+      </div>
+    );
+  };
+
   const renderCorbeille = () => (
     <div>
       <div className="f-display" style={{ fontSize: 22, color: C.text, fontWeight: 600, marginBottom: 4 }}>Corbeille</div>
@@ -2111,7 +2193,7 @@ export default function App() {
     const subtabs = [
       ["effectifs", "Statistiques"], ["suivi", "Suivi par classe"], ["redevables", "Liste des redevables"], ["registre", "Registre"], ["rappel", "Rappel"], ["paiement", "Paiement"],
       ["stats", "Stats paiement"],
-      ["personnel", "Personnel / Paie"], ["depenses", "Dépenses"], ["rapport", "Rapport global"], ["rapportMensuel", "Rapport mensuel"], ["parametres", "Paramètres"],
+      ["personnel", "Personnel / Paie"], ["depenses", "Dépenses"], ["budget", "Budget"], ["rapport", "Rapport global"], ["rapportMensuel", "Rapport mensuel"], ["parametres", "Paramètres"],
     ];
 
     return (
@@ -2504,7 +2586,15 @@ export default function App() {
         {compTab === "depenses" && (
           <Card>
             <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
-              <Input placeholder="Catégorie" value={depForm.categorie} onChange={e => setDepForm({ ...depForm, categorie: e.target.value })} />
+              <Input list="types-budget-depenses" placeholder="Catégorie" value={depForm.categorie} onChange={e => setDepForm({ ...depForm, categorie: e.target.value })} />
+              <datalist id="types-budget-depenses">
+                {[...new Set(budgets.map(b => b.type).filter(Boolean))].map(t => <option key={t} value={t} />)}
+              </datalist>
+              {depForm.categorie && budgets.some(b => b.type.trim().toLowerCase() === depForm.categorie.trim().toLowerCase()) && (() => {
+                const b = budgets.find(x => x.type.trim().toLowerCase() === depForm.categorie.trim().toLowerCase());
+                const restant = b.montantPrevu - depensesPourType(b.type);
+                return <div style={{ fontSize: 10.5, color: restant < 0 ? C.rose : C.textSoft, alignSelf: "center" }}>Budget restant pour "{b.type}" : {fmt(restant)}</div>;
+              })()}
               <Input type="number" placeholder="Montant" value={depForm.montant} onChange={e => setDepForm({ ...depForm, montant: e.target.value })} />
               <Input placeholder="Description" value={depForm.description} onChange={e => setDepForm({ ...depForm, description: e.target.value })} style={{ flex: 1 }} />
               <Btn onClick={addDepense}>{depForm.id ? <Check size={13} /> : <Plus size={13} />}</Btn>
@@ -2523,6 +2613,54 @@ export default function App() {
               ))}</tbody>
             </table>
           </Card>
+        )}
+
+        {compTab === "budget" && (
+          <div>
+            <Card>
+              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>Prévoir une ligne de budget</div>
+              <div style={{ fontSize: 11, color: C.textSoft, marginBottom: 10 }}>Le montant restant et l'éventuel dépassement se calculent automatiquement à partir des dépenses déjà enregistrées portant le même type (catégorie).</div>
+              <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+                <Input type="date" value={budgetForm.date} onChange={e => setBudgetForm({ ...budgetForm, date: e.target.value })} />
+                <Input list="types-budget" placeholder="Type (catégorie)" value={budgetForm.type} onChange={e => setBudgetForm({ ...budgetForm, type: e.target.value })} />
+                <datalist id="types-budget">
+                  {[...new Set(depenses.map(d => d.categorie).filter(Boolean))].map(c => <option key={c} value={c} />)}
+                </datalist>
+                <Input type="number" placeholder="Montant total prévu" value={budgetForm.montantPrevu} onChange={e => setBudgetForm({ ...budgetForm, montantPrevu: e.target.value })} />
+                <Btn onClick={saveBudget}>{budgetForm.id ? <Check size={13} /> : <Plus size={13} />}</Btn>
+                {budgetForm.id && <Btn kind="ghost" onClick={() => setBudgetForm({ date: today, type: "", montantPrevu: "" })}><X size={13} /></Btn>}
+              </div>
+            </Card>
+            <Card style={{ padding: 0, overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead><tr><Th>Date</Th><Th>Type</Th><Th>Montant total prévu</Th><Th>Montant restant</Th><Th>Remarque</Th><Th>Actions</Th></tr></thead>
+                <tbody>
+                  {[...budgets].sort((a, b) => b.date.localeCompare(a.date)).map(b => {
+                    const depense = depensesPourType(b.type);
+                    const restant = b.montantPrevu - depense;
+                    return (
+                      <tr key={b.id}>
+                        <Td>{b.date}</Td>
+                        <Td style={{ fontWeight: 600 }}>{b.type}</Td>
+                        <Td className="f-mono">{fmt(b.montantPrevu)}</Td>
+                        <Td className="f-mono" style={{ color: restant < 0 ? C.rose : C.sage, fontWeight: 700 }}>{fmt(restant)}</Td>
+                        <Td style={{ fontSize: 11.5, color: restant < 0 ? C.rose : C.textSoft, fontWeight: restant < 0 ? 700 : 400 }}>
+                          {restant < 0 ? `Dépassement de ${fmt(Math.abs(restant))}` : "—"}
+                        </Td>
+                        <Td>
+                          <div style={{ display: "flex", gap: 4 }}>
+                            <button onClick={() => setBudgetForm(b)} style={{ background: "none", border: "none", cursor: "pointer" }}><Pencil size={14} color={C.textSoft} /></button>
+                            <button onClick={() => deleteBudget(b.id)} style={{ background: "none", border: "none", cursor: "pointer" }}><Trash2 size={14} color={C.rose} /></button>
+                          </div>
+                        </Td>
+                      </tr>
+                    );
+                  })}
+                  {!budgets.length && <tr><Td colSpan={6} style={{ textAlign: "center", color: C.textSoft }}>Aucune ligne de budget enregistrée.</Td></tr>}
+                </tbody>
+              </table>
+            </Card>
+          </div>
         )}
 
         {compTab === "parametres" && (
@@ -2643,7 +2781,7 @@ export default function App() {
     );
   };
 
-  const pages = { accueil: renderAccueil, eleves: renderEleves, classes: renderClasses, materiels: renderMateriels, saisie: renderSaisie, statSaisies: renderStatSaisies, bulletin: renderBulletin, resultats: renderResultats, comptabilite: renderComptabilite, corbeille: renderCorbeille };
+  const pages = { accueil: renderAccueil, eleves: renderEleves, classes: renderClasses, listeClasse: renderListeClasse, materiels: renderMateriels, saisie: renderSaisie, statSaisies: renderStatSaisies, bulletin: renderBulletin, resultats: renderResultats, comptabilite: renderComptabilite, corbeille: renderCorbeille };
 
   return (
     <div className="f-body" style={{ minHeight: "100vh", background: C.paper, display: "flex" }}>
