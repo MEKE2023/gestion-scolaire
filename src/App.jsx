@@ -979,7 +979,8 @@ export default function App() {
   const renderListeClasse = () => {
     if (!classes.length) return <Card><div style={{ textAlign: "center", color: C.textSoft, padding: 20 }}>Aucune classe n'existe encore — créez-en une dans le menu Classes.</div></Card>;
     const classeListe = classes.find(c => c.id === listeClasseId) || classes[0];
-    const elevesListe = students.filter(s => s.classeId === classeListe.id && paiements.some(p => p.studentId === s.id)).sort((a, b) => a.nom.localeCompare(b.nom));
+    const estBoursier = (s) => s.montantPersonnalise !== undefined && s.montantPersonnalise !== null && s.montantPersonnalise !== "";
+    const elevesListe = students.filter(s => s.classeId === classeListe.id && (paiements.some(p => p.studentId === s.id) || estBoursier(s) || s.excluStats)).sort((a, b) => a.nom.localeCompare(b.nom));
     return (
       <div>
         <div className="no-print" style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
@@ -991,7 +992,7 @@ export default function App() {
             elevesListe.map((s, i) => [i + 1, `${s.prenoms} ${s.nom}`, s.matricule, s.sexe, s.telephone])
           )}><Download size={13} /> Exporter vers Excel</Btn>
         </div>
-        <div className="no-print" style={{ fontSize: 11, color: C.textSoft, marginBottom: 10 }}>Seuls les élèves ayant déjà effectué au moins un versement à la comptabilité apparaissent dans cette liste.</div>
+        <div className="no-print" style={{ fontSize: 11, color: C.textSoft, marginBottom: 10 }}>Figurent ici les élèves ayant déjà effectué un versement, ainsi que les boursiers et les élèves signalés en case discrète.</div>
 
         <Card className="print-area">
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 4 }}>
@@ -1027,7 +1028,7 @@ export default function App() {
               {elevesListe.map((s, i) => (
                 <tr key={s.id}>
                   <td style={{ padding: "7px 10px", fontSize: 12.5, border: `1px solid ${C.line}`, textAlign: "center" }}>{i + 1}</td>
-                  <td style={{ padding: "7px 10px", fontSize: 12.5, border: `1px solid ${C.line}`, fontWeight: 600 }}>{s.prenoms} {s.nom}</td>
+                  <td style={{ padding: "7px 10px", fontSize: 12.5, border: `1px solid ${C.line}`, fontWeight: 600 }}>{s.prenoms} {s.nom}{estBoursier(s) && <span style={{ fontWeight: 400, fontSize: 10.5, color: C.textSoft }}> (Boursier)</span>}</td>
                   <td className="f-mono" style={{ padding: "7px 10px", fontSize: 12.5, border: `1px solid ${C.line}`, textAlign: "center" }}>{s.matricule}</td>
                   <td style={{ padding: "7px 10px", fontSize: 12.5, border: `1px solid ${C.line}`, textAlign: "center" }}>{s.sexe}</td>
                   <td style={{ padding: "7px 10px", fontSize: 12.5, border: `1px solid ${C.line}` }}>{s.telephone}</td>
@@ -1036,7 +1037,7 @@ export default function App() {
               {!elevesListe.length && <tr><td colSpan={5} style={{ padding: 20, textAlign: "center", color: C.textSoft, border: `1px solid ${C.line}` }}>Aucun élève de cette classe n'a encore effectué de versement.</td></tr>}
             </tbody>
           </table>
-          <div style={{ marginTop: 14, fontSize: 11, fontWeight: 700 }}>Effectif (ayant versé) : {elevesListe.length} élève(s)</div>
+          <div style={{ marginTop: 14, fontSize: 11, fontWeight: 700 }}>Effectif : {elevesListe.length} élève(s)</div>
         </Card>
       </div>
     );
