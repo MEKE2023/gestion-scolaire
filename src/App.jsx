@@ -349,6 +349,7 @@ export default function App() {
   const [bulEleve, setBulEleve] = useState("");
   const [matiereForm, setMatiereForm] = useState(null);
   const [printAllView, setPrintAllView] = useState(false);
+  const [listeAnnuelleView, setListeAnnuelleView] = useState(false);
 
   /* ---- Saisie de notes ---- */
   const [saisieClasse, setSaisieClasse] = useState("cl1");
@@ -466,6 +467,8 @@ export default function App() {
       setDepenses(prev => [...prev, item.data]);
     } else if (item.type === "materiel") {
       setMateriels(prev => [...prev, item.data]);
+    } else if (item.type === "budget") {
+      setBudgets(prev => [...prev, item.data]);
     }
     setCorbeille(prev => prev.filter(c => c.id !== cbId));
   };
@@ -794,7 +797,11 @@ export default function App() {
     const el = students.find(s => s.id === paieForm.studentId);
     const reste = studentReste(el);
     if (Number(paieForm.montant) > reste) {
-      window.alert(`Ce montant dépasse ce qui reste dû pour cet élève (${fmt(reste)} restant). Corrigez le montant avant d'enregistrer.`);
+      if (reste <= 0) {
+        window.alert(`Cet élève a déjà réglé l'intégralité de ses frais${reste < 0 ? ` (et même ${fmt(-reste)} de plus, probablement suite à une baisse des frais)` : ""}. Aucun nouveau paiement n'est nécessaire.`);
+      } else {
+        window.alert(`Ce montant dépasse ce qui reste dû pour cet élève (${fmt(reste)} restant). Corrigez le montant avant d'enregistrer.`);
+      }
       return;
     }
     const id = uid("p");
@@ -833,7 +840,11 @@ export default function App() {
     const el = students.find(s => s.id === p.studentId);
     const resteHorsCePaiement = studentReste(el) + Number(p.montant);
     if (Number(nouveauMontant) > resteHorsCePaiement) {
-      window.alert(`Ce montant dépasse ce qui resterait dû pour cet élève (${fmt(resteHorsCePaiement)} maximum). Corrigez avant d'enregistrer.`);
+      if (resteHorsCePaiement <= 0) {
+        window.alert(`Même sans ce paiement, cet élève a déjà réglé l'intégralité de ses frais${resteHorsCePaiement < 0 ? ` (et même ${fmt(-resteHorsCePaiement)} de plus, probablement suite à une baisse des frais)` : ""}. Ce paiement ne peut donc pas être augmenté.`);
+      } else {
+        window.alert(`Ce montant dépasse ce qui resterait dû pour cet élève (${fmt(resteHorsCePaiement)} maximum). Corrigez avant d'enregistrer.`);
+      }
       return;
     }
     setPaiements(prev => prev.map(x => x.id === id ? { ...x, montant: Number(nouveauMontant) } : x));
@@ -885,7 +896,12 @@ export default function App() {
     else setBudgets(prev => [...prev, { ...budgetForm, id: uid("bg"), montantPrevu: Number(budgetForm.montantPrevu) }]);
     setBudgetForm({ date: today, type: "", montantPrevu: "" });
   };
-  const deleteBudget = (id) => { if (window.confirm("Supprimer cette ligne de budget ? (les dépenses déjà enregistrées ne sont pas affectées)")) setBudgets(prev => prev.filter(b => b.id !== id)); };
+  const deleteBudget = (id) => {
+    const b = budgets.find(x => x.id === id);
+    if (!window.confirm("Supprimer cette ligne de budget ? (les dépenses déjà enregistrées ne sont pas affectées)")) return;
+    if (b) envoyerCorbeille("budget", b, `Budget : ${b.type} — ${fmt(b.montantPrevu)}`);
+    setBudgets(prev => prev.filter(x => x.id !== id));
+  };
 
   /* ---------- Actions Matériels didactiques ---------- */
   const saveMateriel = () => {
@@ -2080,8 +2096,82 @@ export default function App() {
     );
   };
 
+  const renderListeAnnuelleNotes = () => {
+    if (!classes.length) return <Card><div style={{ textAlign: "center", color: C.textSoft, padding: 20 }}>Aucune classe n'existe encore.</div></Card>;
+    const classeListe = classes.find(c => c.id === bulClasse) || classes[0];
+    const niveauListe = niveauDe(classeListe.id);
+    const matieresListe = matieresConfig[niveauListe] || [];
+    const elevesListe = students.filter(s => s.classeId === classeListe.id).sort((a, b) => a.nom.localeCompare(b.nom));
+    return (
+      <div>
+        <div className="no-print" style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+          <Select value={classeListe.id} onChange={e => setBulClasse(e.target.value)}>{classes.map(c => <option key={c.id} value={c.id}>{c.nom}</option>)}</Select>
+          <Btn kind="ghost" onClick={() => setListeAnnuelleView(false)}><X size={13} /> Retour au bulletin</Btn>
+          <Btn onClick={() => window.print()}><Printer size={13} /> Imprimer</Btn>
+          <Btn kind="ghost" onClick={() => exportCSV(
+            `notes-annuelles-${classeListe.nom}.csv`,
+            ["N°", "Prénoms et Nom", "Sexe", "Matricule", ...matieresListe.map(m => m.nom)],
+            elevesListe.map((s, i) => [i + 1, `${s.prenoms} ${s.nom}`, s.sexe, s.matricule, ...matieresListe.map(m => { const n = noteDe(s.id, m.id, "ANNUEL"); return n != null ? n.toFixed(2) : ""; })])
+          )}><Download size={13} /> Exporter vers Excel</Btn>
+        </div>
+
+        <Card className="print-area">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 4 }}>
+            <div style={{ fontSize: 11.5, lineHeight: 1.7, fontWeight: 700 }}>
+              <div>{config.etablissement}</div>
+              {config.etablissementAdresse && <div>{config.etablissementAdresse}</div>}
+              {config.etablissementTels && <div>TÉLS : {config.etablissementTels}</div>}
+              {config.ire && <div>IRE : {config.ire}</div>}
+              {config.dpe && <div>DPE : {config.dpe}</div>}
+            </div>
+            <div style={{ width: 58, height: 58, borderRadius: "50%", border: `2px solid ${C.brass}`, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+              {config.logo ? <img src={config.logo} alt="Logo" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <GraduationCap size={24} color={C.brass} />}
+            </div>
+            <div style={{ fontSize: 11.5, lineHeight: 1.7, fontWeight: 700, textAlign: "right" }}>
+              <div>RÉPUBLIQUE DE GUINÉE</div>
+              <div style={{ fontWeight: 400, fontSize: 10.5 }}>Travail – Justice – Solidarité</div>
+              <div style={{ fontWeight: 400, fontSize: 10.5 }}>Année scolaire : {config.anneeScolaire}</div>
+            </div>
+          </div>
+
+          <div className="f-display" style={{ textAlign: "center", fontWeight: 700, fontSize: 20, color: C.text, margin: "18px 0 14px", textTransform: "uppercase" }}>
+            Notes annuelles — {classeListe.nom}
+          </div>
+
+          <table style={{ width: "100%", borderCollapse: "collapse", border: `1.5px solid ${C.ink}` }}>
+            <thead><tr>
+              <th style={{ background: C.ink, color: "#fff", padding: "7px 8px", fontSize: 10.5, textTransform: "uppercase", border: `1px solid ${C.ink}`, width: 36 }}>N°</th>
+              <th style={{ background: C.ink, color: "#fff", padding: "7px 8px", fontSize: 10.5, textTransform: "uppercase", border: `1px solid ${C.ink}`, textAlign: "left" }}>Prénoms et Nom</th>
+              <th style={{ background: C.ink, color: "#fff", padding: "7px 8px", fontSize: 10.5, textTransform: "uppercase", border: `1px solid ${C.ink}`, width: 55 }}>Sexe</th>
+              <th style={{ background: C.ink, color: "#fff", padding: "7px 8px", fontSize: 10.5, textTransform: "uppercase", border: `1px solid ${C.ink}` }}>Matricule</th>
+              {matieresListe.map(m => <th key={m.id} style={{ background: C.ink, color: "#fff", padding: "7px 6px", fontSize: 10, textTransform: "uppercase", border: `1px solid ${C.ink}` }}>{m.nom}</th>)}
+            </tr></thead>
+            <tbody>
+              {elevesListe.map((s, i) => (
+                <tr key={s.id}>
+                  <td style={{ padding: "6px 8px", fontSize: 12, border: `1px solid ${C.line}`, textAlign: "center" }}>{i + 1}</td>
+                  <td style={{ padding: "6px 8px", fontSize: 12, border: `1px solid ${C.line}`, fontWeight: 600 }}>{s.prenoms} {s.nom}</td>
+                  <td style={{ padding: "6px 8px", fontSize: 12, border: `1px solid ${C.line}`, textAlign: "center" }}>{s.sexe}</td>
+                  <td className="f-mono" style={{ padding: "6px 8px", fontSize: 12, border: `1px solid ${C.line}`, textAlign: "center" }}>{s.matricule}</td>
+                  {matieresListe.map(m => {
+                    const n = noteDe(s.id, m.id, "ANNUEL");
+                    return <td key={m.id} className="f-mono" style={{ padding: "6px 8px", fontSize: 12, border: `1px solid ${C.line}`, textAlign: "center" }}>{n != null ? n.toFixed(2) : "—"}</td>;
+                  })}
+                </tr>
+              ))}
+              {!elevesListe.length && <tr><td colSpan={4 + matieresListe.length} style={{ padding: 20, textAlign: "center", color: C.textSoft, border: `1px solid ${C.line}` }}>Aucun élève dans cette classe.</td></tr>}
+              {elevesListe.length > 0 && !matieresListe.length && <tr><td colSpan={4} style={{ padding: 10, textAlign: "center", color: C.textSoft, border: `1px solid ${C.line}` }}>Aucune matière configurée pour ce niveau (menu Classes).</td></tr>}
+            </tbody>
+          </table>
+          <div style={{ marginTop: 14, fontSize: 11, fontWeight: 700 }}>Effectif : {elevesListe.length} élève(s)</div>
+        </Card>
+      </div>
+    );
+  };
+
   const renderBulletin = () => {
     if (printAllView) return renderImpressionTousBulletins();
+    if (listeAnnuelleView) return renderListeAnnuelleNotes();
 
     const niveauBul = niveauDe(bulClasse);
     const matieres = matieresConfig[niveauBul] || [];
@@ -2102,6 +2192,7 @@ export default function App() {
             <option value="ANNUEL">Bulletin annuel (moyenne des périodes)</option>
           </Select>
           <Select value={bulEleve} onChange={e => setBulEleve(e.target.value)}><option value="">Voir un bulletin individuel…</option>{classeEleves.map(s => <option key={s.id} value={s.id}>{nomMat(s)}</option>)}</Select>
+          <Btn kind="ghost" onClick={() => setListeAnnuelleView(true)}><ListOrdered size={13} /> Liste annuelle des notes</Btn>
         </div>
 
         <Card className="no-print">
