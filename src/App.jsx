@@ -409,6 +409,9 @@ export default function App() {
     return Number(configNiveau(niveauDe(s?.classeId)).fraisAnnuel || 0);
   };
   const studentReste = (s) => studentAttendu(s) - studentPaid(s.id);
+  const estBoursier = (s) => s?.montantPersonnalise !== undefined && s?.montantPersonnalise !== null && s?.montantPersonnalise !== "";
+  // Éligible aux listes (saisie de notes, bulletin, liste de classe) : au moins un versement, ou boursier, ou case secrète (excluStats)
+  const eligiblePourListes = (s) => paiements.some(p => p.studentId === s.id) || estBoursier(s) || !!s?.excluStats;
   const totalEntrees = paiements.reduce((s, p) => { const el = students.find(x => x.id === p.studentId); return (!el || el.excluStats) ? s : s + Number(p.montant); }, 0);
   const totalDepenses = depenses.reduce((s, d) => s + Number(d.montant), 0);
   const totalPaieVersee = paieHist.reduce((s, p) => staff.some(st => st.id === p.staffId) ? s + Number(p.montant) : s, 0);
@@ -995,8 +998,7 @@ export default function App() {
   const renderListeClasse = () => {
     if (!classes.length) return <Card><div style={{ textAlign: "center", color: C.textSoft, padding: 20 }}>Aucune classe n'existe encore — créez-en une dans le menu Classes.</div></Card>;
     const classeListe = classes.find(c => c.id === listeClasseId) || classes[0];
-    const estBoursier = (s) => s.montantPersonnalise !== undefined && s.montantPersonnalise !== null && s.montantPersonnalise !== "";
-    const elevesListe = students.filter(s => s.classeId === classeListe.id && (paiements.some(p => p.studentId === s.id) || estBoursier(s) || s.excluStats)).sort((a, b) => a.nom.localeCompare(b.nom));
+    const elevesListe = students.filter(s => s.classeId === classeListe.id && eligiblePourListes(s)).sort((a, b) => a.nom.localeCompare(b.nom));
     return (
       <div>
         <div className="no-print" style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
@@ -1378,7 +1380,7 @@ export default function App() {
     const matieres = matieresConfig[niveauSaisie] || [];
     const classeSaisie = classes.find(c => c.id === saisieClasse);
     const periodesClasse = configNiveau(niveauSaisie).periodes;
-    const eleves = students.filter(s => s.classeId === saisieClasse).sort((a, b) => a.nom.localeCompare(b.nom));
+    const eleves = students.filter(s => s.classeId === saisieClasse && eligiblePourListes(s)).sort((a, b) => a.nom.localeCompare(b.nom));
     const noteA = (studentId, matiereId, periode) => notes.find(n => n.studentId === studentId && n.matiereId === matiereId && n.trimestre === periode)?.note ?? null;
 
     if (ficheNotesView) {
@@ -1905,7 +1907,7 @@ export default function App() {
     const matieres = matieresConfig[niveauStat] || [];
     const periodesClasse = configNiveau(niveauStat).periodes;
     const periodeChoisie = statSaisiePeriode || periodesClasse[0] || "";
-    const eleves = students.filter(s => s.classeId === statSaisieClasse).sort((a, b) => a.nom.localeCompare(b.nom));
+    const eleves = students.filter(s => s.classeId === statSaisieClasse && eligiblePourListes(s)).sort((a, b) => a.nom.localeCompare(b.nom));
 
     const analyse = eleves.map(s => {
       const problemes = matieres.map(m => {
@@ -2082,7 +2084,7 @@ export default function App() {
   };
 
   const renderImpressionTousBulletins = () => {
-    const eleves = students.filter(s => s.classeId === bulClasse);
+    const eleves = students.filter(s => s.classeId === bulClasse && eligiblePourListes(s)).sort((a, b) => a.nom.localeCompare(b.nom));
     return (
       <div>
         <div className="no-print" style={{ display: "flex", gap: 8, marginBottom: 14 }}>
@@ -2101,7 +2103,7 @@ export default function App() {
     const classeListe = classes.find(c => c.id === bulClasse) || classes[0];
     const niveauListe = niveauDe(classeListe.id);
     const matieresListe = matieresConfig[niveauListe] || [];
-    const elevesListe = students.filter(s => s.classeId === classeListe.id).sort((a, b) => a.nom.localeCompare(b.nom));
+    const elevesListe = students.filter(s => s.classeId === classeListe.id && eligiblePourListes(s)).sort((a, b) => a.nom.localeCompare(b.nom));
     return (
       <div>
         <div className="no-print" style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
@@ -2177,7 +2179,7 @@ export default function App() {
     const matieres = matieresConfig[niveauBul] || [];
     const classeBul = classes.find(c => c.id === bulClasse);
     const periodesClasse = configNiveau(niveauBul).periodes;
-    const classeEleves = students.filter(s => s.classeId === bulClasse);
+    const classeEleves = students.filter(s => s.classeId === bulClasse && eligiblePourListes(s)).sort((a, b) => a.nom.localeCompare(b.nom));
     const classement = classementClasse(bulClasse, bulTrimestre);
 
     return (
