@@ -333,7 +333,7 @@ export default function App() {
   /* ---- Élèves ---- */
   const [eleveForm, setEleveForm] = useState(null);
   const [eleveSearch, setEleveSearch] = useState(""); const [eleveFiltreClasse, setEleveFiltreClasse] = useState("");
-  const [eleveSort, setEleveSort] = useState({ champ: "nom", dir: 1 });
+  const [eleveSort, setEleveSort] = useState({ champ: "prenoms", dir: 1 });
 
   /* ---- Classes ---- */
   const [nouvelleClasseNiveau, setNouvelleClasseNiveau] = useState("");
@@ -388,7 +388,7 @@ export default function App() {
   const [rapportMoisAnnee, setRapportMoisAnnee] = useState(new Date().getFullYear());
   const [depForm, setDepForm] = useState({ categorie: "", montant: "", description: "" });
   const [suiviClasse, setSuiviClasse] = useState("cl1");
-  const [suiviSort, setSuiviSort] = useState({ champ: "nom", dir: 1 });
+  const [suiviSort, setSuiviSort] = useState({ champ: "prenoms", dir: 1 });
   const [redevablesClasse, setRedevablesClasse] = useState("cl1");
   const [rappelClasse, setRappelClasse] = useState("cl1");
   const [anneeEnAttente, setAnneeEnAttente] = useState(null);
@@ -998,7 +998,7 @@ export default function App() {
   const renderListeClasse = () => {
     if (!classes.length) return <Card><div style={{ textAlign: "center", color: C.textSoft, padding: 20 }}>Aucune classe n'existe encore — créez-en une dans le menu Classes.</div></Card>;
     const classeListe = classes.find(c => c.id === listeClasseId) || classes[0];
-    const elevesListe = students.filter(s => s.classeId === classeListe.id && eligiblePourListes(s)).sort((a, b) => a.nom.localeCompare(b.nom));
+    const elevesListe = students.filter(s => s.classeId === classeListe.id && eligiblePourListes(s)).sort((a, b) => a.prenoms.localeCompare(b.prenoms));
     return (
       <div>
         <div className="no-print" style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
@@ -1364,7 +1364,7 @@ export default function App() {
             </div>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead><tr><Th>Nom</Th><Th>Sexe</Th><Th>Matricule</Th><Th>Parent</Th></tr></thead>
-              <tbody>{[...selStudents].sort((a, b) => a.nom.localeCompare(b.nom)).map(s => (
+              <tbody>{[...selStudents].sort((a, b) => a.prenoms.localeCompare(b.prenoms)).map(s => (
                 <tr key={s.id}><Td style={{ fontWeight: 600 }}>{s.prenoms} {s.nom}</Td><Td>{s.sexe}</Td><Td className="f-mono">{s.matricule}</Td><Td>{s.parent}</Td></tr>
               ))}</tbody>
             </table>
@@ -1380,7 +1380,7 @@ export default function App() {
     const matieres = matieresConfig[niveauSaisie] || [];
     const classeSaisie = classes.find(c => c.id === saisieClasse);
     const periodesClasse = configNiveau(niveauSaisie).periodes;
-    const eleves = students.filter(s => s.classeId === saisieClasse && eligiblePourListes(s)).sort((a, b) => a.nom.localeCompare(b.nom));
+    const eleves = students.filter(s => s.classeId === saisieClasse && eligiblePourListes(s)).sort((a, b) => a.prenoms.localeCompare(b.prenoms));
     const noteA = (studentId, matiereId, periode) => notes.find(n => n.studentId === studentId && n.matiereId === matiereId && n.trimestre === periode)?.note ?? null;
 
     if (ficheNotesView) {
@@ -1907,7 +1907,7 @@ export default function App() {
     const matieres = matieresConfig[niveauStat] || [];
     const periodesClasse = configNiveau(niveauStat).periodes;
     const periodeChoisie = statSaisiePeriode || periodesClasse[0] || "";
-    const eleves = students.filter(s => s.classeId === statSaisieClasse && eligiblePourListes(s)).sort((a, b) => a.nom.localeCompare(b.nom));
+    const eleves = students.filter(s => s.classeId === statSaisieClasse && eligiblePourListes(s)).sort((a, b) => a.prenoms.localeCompare(b.prenoms));
 
     const analyse = eleves.map(s => {
       const problemes = matieres.map(m => {
@@ -2084,7 +2084,7 @@ export default function App() {
   };
 
   const renderImpressionTousBulletins = () => {
-    const eleves = students.filter(s => s.classeId === bulClasse && eligiblePourListes(s)).sort((a, b) => a.nom.localeCompare(b.nom));
+    const eleves = students.filter(s => s.classeId === bulClasse && eligiblePourListes(s)).sort((a, b) => a.prenoms.localeCompare(b.prenoms));
     return (
       <div>
         <div className="no-print" style={{ display: "flex", gap: 8, marginBottom: 14 }}>
@@ -2103,7 +2103,7 @@ export default function App() {
     const classeListe = classes.find(c => c.id === bulClasse) || classes[0];
     const niveauListe = niveauDe(classeListe.id);
     const matieresListe = matieresConfig[niveauListe] || [];
-    const elevesListe = students.filter(s => s.classeId === classeListe.id && eligiblePourListes(s)).sort((a, b) => a.nom.localeCompare(b.nom));
+    const elevesListe = students.filter(s => s.classeId === classeListe.id && eligiblePourListes(s)).sort((a, b) => a.prenoms.localeCompare(b.prenoms));
     return (
       <div>
         <div className="no-print" style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
@@ -2179,7 +2179,7 @@ export default function App() {
     const matieres = matieresConfig[niveauBul] || [];
     const classeBul = classes.find(c => c.id === bulClasse);
     const periodesClasse = configNiveau(niveauBul).periodes;
-    const classeEleves = students.filter(s => s.classeId === bulClasse && eligiblePourListes(s)).sort((a, b) => a.nom.localeCompare(b.nom));
+    const classeEleves = students.filter(s => s.classeId === bulClasse && eligiblePourListes(s)).sort((a, b) => a.prenoms.localeCompare(b.prenoms));
     const classement = classementClasse(bulClasse, bulTrimestre);
 
     return (
@@ -2369,7 +2369,7 @@ export default function App() {
         })()}
 
         {compTab === "redevables" && (() => {
-          const liste = students.filter(s => s.classeId === redevablesClasse && studentReste(s) > 0);
+          const liste = students.filter(s => s.classeId === redevablesClasse && studentReste(s) > 0).sort((a, b) => a.prenoms.localeCompare(b.prenoms));
           return (
             <div>
               <div className="no-print" style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
@@ -2401,7 +2401,7 @@ export default function App() {
         })()}
 
         {compTab === "registre" && (() => {
-          const liste = [...students].sort((a, b) => a.nom.localeCompare(b.nom));
+          const liste = [...students].sort((a, b) => a.prenoms.localeCompare(b.prenoms));
           return (
             <Card>
               <div className="no-print" style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
@@ -2442,7 +2442,7 @@ export default function App() {
         })()}
 
         {compTab === "rappel" && (() => {
-          const liste = students.filter(s => s.classeId === rappelClasse && studentReste(s) > 0);
+          const liste = students.filter(s => s.classeId === rappelClasse && studentReste(s) > 0).sort((a, b) => a.prenoms.localeCompare(b.prenoms));
           const pages = [];
           for (let i = 0; i < liste.length; i += 10) pages.push(liste.slice(i, i + 10));
 
@@ -2497,7 +2497,7 @@ export default function App() {
               <Input placeholder="Rechercher par nom ou matricule…" value={paieRecherche} onChange={e => setPaieRecherche(e.target.value)} disabled={!paieClasseFiltre} style={{ gridColumn: "span 2" }} />
               <Select value={paieForm.studentId} onChange={e => setPaieForm({ ...paieForm, studentId: e.target.value })} disabled={!paieClasseFiltre}>
                 <option value="">{paieClasseFiltre ? "Élève…" : "Choisissez d'abord une classe"}</option>
-                {students.filter(s => s.classeId === paieClasseFiltre && (!paieRecherche || `${s.prenoms} ${s.nom} ${s.matricule}`.toLowerCase().includes(paieRecherche.toLowerCase()))).map(s => <option key={s.id} value={s.id}>{nomMat(s)}</option>)}
+                {students.filter(s => s.classeId === paieClasseFiltre && (!paieRecherche || `${s.prenoms} ${s.nom} ${s.matricule}`.toLowerCase().includes(paieRecherche.toLowerCase()))).sort((a, b) => a.prenoms.localeCompare(b.prenoms)).map(s => <option key={s.id} value={s.id}>{nomMat(s)}</option>)}
               </Select>
               <Select value={paieForm.trancheId} onChange={e => setPaieForm({ ...paieForm, trancheId: e.target.value })} disabled={!paieClasseFiltre}><option value="">Tranche…</option>{tranchesEcole.map(t => <option key={t.id} value={t.id}>{t.nom}</option>)}</Select>
               <Input type="number" placeholder="Montant versé" max={paieForm.studentId ? studentReste(students.find(s => s.id === paieForm.studentId)) : undefined} value={paieForm.montant} onChange={e => {
