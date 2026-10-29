@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Home, Users, Layers, BarChart3, Wallet, PiggyBank, FileText, Lock, LogOut,
   Search, Download, Printer, Plus, Pencil, Trash2, Camera, AlertTriangle,
@@ -217,6 +217,8 @@ export default function App() {
   const [saveStatus, setSaveStatus] = useState("saved");
   const [retrySaveTick, setRetrySaveTick] = useState(0);
   const [retryCount, setRetryCount] = useState(0);
+  const [conflit, setConflit] = useState(false);
+  const versionServeur = useRef(null); // dernière date de mise à jour connue côté serveur
   const [menu, setMenu] = useState("accueil");
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
@@ -255,8 +257,18 @@ export default function App() {
   useEffect(() => {
     if (!session) return;
     setLoadError(null);
+    let annule = false;
+    const minuteur = setTimeout(() => { if (!annule) { annule = true; setLoadError("Délai dépassé : la connexion est trop lente ou coupée."); } }, 25000);
     (async () => {
-      const { data, error } = await supabase.from("app_state").select("data").eq("id", "main").maybeSingle();
+      let data, error;
+      try {
+        ({ data, error } = await supabase.from("app_state").select("data, updated_at").eq("id", "main").maybeSingle());
+      } catch (e) {
+        error = { message: (e && e.message) || "Connexion impossible." };
+      }
+      clearTimeout(minuteur);
+      if (annule) return; // le délai a déjà affiché l'écran d'erreur : on ignore une réponse tardive
+      annule = true;
 
       if (error) {
         // Vraie erreur (réseau, Supabase indisponible...) : on ne touche à RIEN pour ne jamais écraser les vraies données.
@@ -265,6 +277,7 @@ export default function App() {
       }
 
       if (data && data.data) {
+        versionServeur.current = data.updated_at || null;
         const d = data.data;
         setClasses(d.classes || initClasses());
         const studentsCharges = d.students || initStudents();
@@ -295,39 +308,67 @@ export default function App() {
         }
       } else {
         // Aucune ligne trouvée ET aucune erreur : c'est vraiment une toute première installation.
-        await supabase.from("app_state").insert({
+        const ins = await supabase.from("app_state").insert({
           id: "main",
           data: {
             classes: initClasses(), students: initStudents(), paiements: initPaiements(),
             staff: initStaff(), paieHist: initPaieHist(), depenses: initDepenses(), matieresConfig: initMatieres(), tranchesEcole: initTranches(),
             notes: initNotes(), materiels: initMateriels(), archives: {}, corbeille: [], budgets: [], conduites: [], configNiveaux: {}, config: { devise: "GNF", etablissement: "GROUPE SCOLAIRE PRIVÉ CARMEL", etablissementAdresse: "", etablissementTels: "", etablissementEmail: "", ire: "", dpe: "", anneeScolaire: "2026-2027", bareme: 20, comptaPassword: "compta2026", logo: null },
           },
-        });
+        }).select("updated_at");
+        versionServeur.current = (ins.data && ins.data[0] && ins.data[0].updated_at) || null;
       }
       setDataLoaded(true);
     })();
+    return () => { annule = true; clearTimeout(minuteur); };
   }, [session, retryCount]);
 
+  const saveEnCours = useRef(false);
+  const saveEnAttente = useRef(null);
+  const saveStatusRef = useRef("saved");
+  useEffect(() => { saveStatusRef.current = saveStatus; }, [saveStatus]);
   useEffect(() => {
     if (!session || !dataLoaded) return;
     const t = setTimeout(() => {
-      setSaveStatus("saving");
-      supabase.from("app_state").upsert({
-        id: "main",
-        data: { classes, students, paiements, staff, paieHist, depenses, matieresConfig, configNiveaux, tranchesEcole, notes, materiels, archives, corbeille, budgets, conduites, config },
-        updated_at: new Date().toISOString(),
-      }).then(({ error }) => {
-        if (error) {
+      const envoyer = async (payload) => {
+        // Un seul envoi à la fois : sur réseau lent, une ancienne sauvegarde ne peut plus écraser une plus récente.
+        if (saveEnCours.current) { saveEnAttente.current = payload; return; }
+        saveEnCours.current = true;
+        setSaveStatus("saving");
+        let echec = false;
+        try {
+          // Mise à jour CONDITIONNELLE : n'écrit que si personne d'autre n'a enregistré entre-temps (sinon blocage de sécurité).
+          let req = supabase.from("app_state").update({ data: payload, updated_at: new Date().toISOString() }).eq("id", "main");
+          req = versionServeur.current ? req.eq("updated_at", versionServeur.current) : req.is("updated_at", null);
+          const { data: lignes, error } = await req.select("updated_at");
+          if (error) echec = true;
+          else if (!lignes || lignes.length === 0) {
+            saveEnCours.current = false; saveEnAttente.current = null;
+            setConflit(true); setSaveStatus("error");
+            return;
+          } else versionServeur.current = lignes[0].updated_at;
+        } catch (e) { echec = true; }
+        saveEnCours.current = false;
+        if (saveEnAttente.current) { const suivant = saveEnAttente.current; saveEnAttente.current = null; envoyer(suivant); return; }
+        if (echec) {
           setSaveStatus("error");
-          // Nouvelle tentative automatique après 5 secondes si le réseau était juste faible/coupé.
+          // Nouvelle tentative automatique après 5 secondes (réseau faible ou coupé).
           setTimeout(() => setRetrySaveTick(x => x + 1), 5000);
         } else {
           setSaveStatus("saved");
         }
-      });
+      };
+      envoyer({ classes, students, paiements, staff, paieHist, depenses, matieresConfig, configNiveaux, tranchesEcole, notes, materiels, archives, corbeille, budgets, conduites, config });
     }, 800);
     return () => clearTimeout(t);
   }, [classes, students, paiements, staff, paieHist, depenses, matieresConfig, configNiveaux, tranchesEcole, notes, materiels, archives, corbeille, budgets, conduites, config, session, dataLoaded, retrySaveTick]);
+
+  // Avertit avant de fermer l'onglet si des modifications ne sont pas encore enregistrées (réseau lent ou coupé).
+  useEffect(() => {
+    const avant = (e) => { if (saveStatusRef.current !== "saved" && saveStatusRef.current !== "reload") { e.preventDefault(); e.returnValue = ""; } };
+    window.addEventListener("beforeunload", avant);
+    return () => window.removeEventListener("beforeunload", avant);
+  }, []);
 
 
   /* ---- Élèves ---- */
@@ -856,6 +897,11 @@ export default function App() {
   const supprimerPaiement = (id) => {
     if (!window.confirm("Supprimer ce paiement ? Il pourra être restauré depuis la corbeille si besoin.")) return;
     const paiement = paiements.find(p => p.id === id);
+    if (paiement) {
+      const elP = students.find(s => s.id === paiement.studentId);
+      const dernier = paiements.filter(p => p.studentId === paiement.studentId).length === 1;
+      if (elP && dernier && !estBoursier(elP) && !elP.excluStats && !window.confirm(`C'est le seul paiement de ${elP.prenoms} ${elP.nom}. Sans paiement (et sans être boursier), cet élève disparaîtra des listes (saisie de notes, bulletins, liste de classe, redevables). Ses notes ne sont pas effacées et réapparaîtront dès qu'un paiement sera enregistré ou le paiement restauré.\n\nContinuer la suppression ?`)) return;
+    }
     if (paiement) { const el = students.find(s => s.id === paiement.studentId); envoyerCorbeille("paiement", paiement, `Paiement de ${el ? `${el.prenoms} ${el.nom}` : "élève inconnu"} — ${fmt(paiement.montant, config.devise)}`); }
     setPaiements(prev => prev.filter(p => p.id !== id));
     setRecuId(prev => prev === id ? null : prev);
@@ -959,6 +1005,22 @@ export default function App() {
     );
   }
 
+  if (conflit) {
+    return (
+      <div className="f-body" style={{ minHeight: "100vh", background: C.paper, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+        {FONTS}
+        <div style={{ maxWidth: 440, textAlign: "center", background: "#fff", borderRadius: 14, padding: 30, border: `1px solid ${C.line}` }}>
+          <div style={{ fontSize: 40, marginBottom: 10 }}>🔒</div>
+          <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8, color: C.text }}>Enregistrement suspendu par sécurité</div>
+          <div style={{ fontSize: 13, color: C.textSoft, marginBottom: 18 }}>
+            Les données ont été modifiées depuis un autre appareil ou un autre onglet. Pour ne rien écraser, cette page n'enregistre plus. Rechargez pour récupérer la version la plus récente, puis refaites vos dernières modifications s'il y en a.
+          </div>
+          <button onClick={() => { saveStatusRef.current = "reload"; window.location.reload(); }} style={{ background: C.ink, color: "#fff", border: "none", borderRadius: 10, padding: "10px 22px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Recharger les données</button>
+        </div>
+      </div>
+    );
+  }
+
   if (loadError) {
     return (
       <div className="f-body" style={{ minHeight: "100vh", background: C.paper, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
@@ -1006,8 +1068,8 @@ export default function App() {
           <Btn onClick={() => window.print()}><Printer size={13} /> Imprimer</Btn>
           <Btn kind="ghost" onClick={() => exportCSV(
             `liste-${classeListe?.nom}.csv`,
-            ["N°", "Prénoms et Nom", "Matricule", "Sexe", "Contact parent"],
-            elevesListe.map((s, i) => [i + 1, `${s.prenoms} ${s.nom}`, s.matricule, s.sexe, s.telephone])
+            ["N°", "Prénoms et Nom", "Matricule", "Sexe", "Nom du parent", "Contact parent"],
+            elevesListe.map((s, i) => [i + 1, `${s.prenoms} ${s.nom}`, s.matricule, s.sexe, s.parent || "", s.telephone])
           )}><Download size={13} /> Exporter vers Excel</Btn>
         </div>
         <div className="no-print" style={{ fontSize: 11, color: C.textSoft, marginBottom: 10 }}>Figurent ici les élèves ayant déjà effectué un versement, ainsi que les boursiers et les élèves signalés en case discrète.</div>
@@ -1040,6 +1102,7 @@ export default function App() {
               <th style={{ background: C.ink, color: "#fff", padding: "8px 10px", fontSize: 11, textTransform: "uppercase", border: `1px solid ${C.ink}`, textAlign: "left" }}>Prénoms et Nom</th>
               <th style={{ background: C.ink, color: "#fff", padding: "8px 10px", fontSize: 11, textTransform: "uppercase", border: `1px solid ${C.ink}` }}>Matricule</th>
               <th style={{ background: C.ink, color: "#fff", padding: "8px 10px", fontSize: 11, textTransform: "uppercase", border: `1px solid ${C.ink}`, width: 70 }}>Sexe</th>
+              <th style={{ background: C.ink, color: "#fff", padding: "8px 10px", fontSize: 11, textTransform: "uppercase", border: `1px solid ${C.ink}`, textAlign: "left" }}>Nom du parent</th>
               <th style={{ background: C.ink, color: "#fff", padding: "8px 10px", fontSize: 11, textTransform: "uppercase", border: `1px solid ${C.ink}` }}>Contact parent</th>
             </tr></thead>
             <tbody>
@@ -1049,10 +1112,11 @@ export default function App() {
                   <td style={{ padding: "7px 10px", fontSize: 12.5, border: `1px solid ${C.line}`, fontWeight: 600 }}>{s.prenoms} {s.nom}{estBoursier(s) && <span style={{ fontWeight: 400, fontSize: 10.5, color: C.textSoft }}> (Boursier)</span>}</td>
                   <td className="f-mono" style={{ padding: "7px 10px", fontSize: 12.5, border: `1px solid ${C.line}`, textAlign: "center" }}>{s.matricule}</td>
                   <td style={{ padding: "7px 10px", fontSize: 12.5, border: `1px solid ${C.line}`, textAlign: "center" }}>{s.sexe}</td>
+                  <td style={{ padding: "7px 10px", fontSize: 12.5, border: `1px solid ${C.line}` }}>{s.parent}</td>
                   <td style={{ padding: "7px 10px", fontSize: 12.5, border: `1px solid ${C.line}` }}>{s.telephone}</td>
                 </tr>
               ))}
-              {!elevesListe.length && <tr><td colSpan={5} style={{ padding: 20, textAlign: "center", color: C.textSoft, border: `1px solid ${C.line}` }}>Aucun élève de cette classe n'a encore effectué de versement.</td></tr>}
+              {!elevesListe.length && <tr><td colSpan={6} style={{ padding: 20, textAlign: "center", color: C.textSoft, border: `1px solid ${C.line}` }}>Aucun élève de cette classe n'a encore effectué de versement.</td></tr>}
             </tbody>
           </table>
           <div style={{ marginTop: 14, fontSize: 11, fontWeight: 700 }}>Effectif : {elevesListe.length} élève(s)</div>
@@ -2369,7 +2433,7 @@ export default function App() {
         })()}
 
         {compTab === "redevables" && (() => {
-          const liste = students.filter(s => s.classeId === redevablesClasse && studentReste(s) > 0).sort((a, b) => a.prenoms.localeCompare(b.prenoms));
+          const liste = students.filter(s => s.classeId === redevablesClasse && eligiblePourListes(s) && studentReste(s) > 0).sort((a, b) => a.prenoms.localeCompare(b.prenoms));
           return (
             <div>
               <div className="no-print" style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
@@ -2442,7 +2506,7 @@ export default function App() {
         })()}
 
         {compTab === "rappel" && (() => {
-          const liste = students.filter(s => s.classeId === rappelClasse && studentReste(s) > 0).sort((a, b) => a.prenoms.localeCompare(b.prenoms));
+          const liste = students.filter(s => s.classeId === rappelClasse && eligiblePourListes(s) && studentReste(s) > 0).sort((a, b) => a.prenoms.localeCompare(b.prenoms));
           const pages = [];
           for (let i = 0; i < liste.length; i += 10) pages.push(liste.slice(i, i + 10));
 
@@ -2819,7 +2883,7 @@ export default function App() {
             <Card>
               <div style={{ fontWeight: 700, marginBottom: 4 }}>Taux de recouvrement global</div>
               <div className="f-mono" style={{ fontSize: 16 }}>{(() => { const attenduTotal = students.filter(st => !st.excluStats).reduce((s, st) => s + studentAttendu(st), 0); return attenduTotal ? Math.round(totalEntrees / attenduTotal * 100) : 0; })()}%</div>
-              <div style={{ fontSize: 12, color: C.textSoft, marginTop: 4 }}>Élèves redevables (paiement en cours) : <b style={{ color: C.rose }}>{students.filter(s => studentReste(s) > 0).length}</b></div>
+              <div style={{ fontSize: 12, color: C.textSoft, marginTop: 4 }}>Élèves redevables (paiement en cours) : <b style={{ color: C.rose }}>{students.filter(s => eligiblePourListes(s) && studentReste(s) > 0).length}</b></div>
             </Card>
           </div>
         )}
