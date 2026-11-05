@@ -207,6 +207,41 @@ function parseCSV(text) {
   });
 }
 
+/* Cycle d'un niveau scolaire : préscolaire, primaire (1ère-6ème), collège (7ème-10ème), lycée (11ème-terminale). */
+const cycleDeNiveau = (niveau) => {
+  const n = String(niveau || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  if (/^(petite|moyenne|grande)\s*section/.test(n)) return "prescolaire";
+  if (/^terminale/.test(n)) return "lycee";
+  const m = n.match(/^(\d{1,2})\s*(er|ere|eme|e)\b/);
+  if (m) { const k = Number(m[1]); if (k >= 1 && k <= 6) return "primaire"; if (k >= 7 && k <= 10) return "college"; if (k >= 11 && k <= 12) return "lycee"; }
+  return "autre";
+};
+
+/* ================= Fusion des enregistrements simultanés =================
+   Chaque "rubrique" (notes, paiements, élèves…) est comparée à la dernière version synchronisée :
+   - modifiée seulement ici  -> on garde la nôtre ;
+   - modifiée seulement ailleurs -> on adopte celle du serveur ;
+   - modifiée des deux côtés de façon différente -> vrai conflit : on bloque (aucune donnée écrasée). */
+const CLES_DONNEES = ["classes", "students", "paiements", "staff", "paieHist", "depenses", "matieresConfig", "configNiveaux", "tranchesEcole", "notes", "materiels", "archives", "corbeille", "budgets", "conduites", "config"];
+const canon = (v) => {
+  const tri = (x) => Array.isArray(x) ? x.map(tri) : (x && typeof x === "object") ? Object.keys(x).sort().reduce((o, k) => { if (x[k] !== undefined) o[k] = tri(x[k]); return o; }, {}) : x;
+  return JSON.stringify(tri(v === undefined ? null : v));
+};
+const fusionnerEtats = (local, serveur, base) => {
+  const fusion = { ...serveur };
+  const adoptes = [];
+  for (const k of CLES_DONNEES) {
+    const l = canon(local[k]);
+    const changeIci = base[k] !== undefined && l !== base[k];
+    const sv = serveur[k];
+    const changeAilleurs = sv !== undefined && canon(sv) !== base[k];
+    if (changeIci && changeAilleurs && canon(sv) !== l) return { conflit: true, cle: k };
+    if (changeIci || !changeAilleurs) { fusion[k] = local[k]; }
+    else { fusion[k] = sv; adoptes.push(k); }
+  }
+  return { conflit: false, fusion, adoptes };
+};
+
 /* ================= App ================= */
 export default function App() {
   const [session, setSession] = useState(null);
@@ -324,32 +359,49 @@ export default function App() {
   }, [session, retryCount]);
 
   const saveEnCours = useRef(false);
-  const saveEnAttente = useRef(null);
+  const saveEnAttente = useRef(false);
   const saveStatusRef = useRef("saved");
+  const baseSync = useRef(null);   // version (par rubrique) de la dernière synchronisation avec le serveur
+  const etatRef = useRef(null);    // dernier état complet affiché (toujours à jour)
+  const setters = { classes: setClasses, students: setStudents, paiements: setPaiements, staff: setStaff, paieHist: setPaieHist, depenses: setDepenses, matieresConfig: setMatieresConfig, configNiveaux: setConfigNiveaux, tranchesEcole: setTranchesEcole, notes: setNotes, materiels: setMateriels, archives: setArchives, corbeille: setCorbeille, budgets: setBudgets, conduites: setConduites, config: setConfig };
+  etatRef.current = { classes, students, paiements, staff, paieHist, depenses, matieresConfig, configNiveaux, tranchesEcole, notes, materiels, archives, corbeille, budgets, conduites, config };
   useEffect(() => { saveStatusRef.current = saveStatus; }, [saveStatus]);
   useEffect(() => {
     if (!session || !dataLoaded) return;
     const t = setTimeout(() => {
-      const envoyer = async (payload) => {
+      const majBase = (p, cles) => { (cles || CLES_DONNEES).forEach(k => { baseSync.current[k] = canon(p[k]); }); };
+      const envoyer = async () => {
         // Un seul envoi à la fois : sur réseau lent, une ancienne sauvegarde ne peut plus écraser une plus récente.
-        if (saveEnCours.current) { saveEnAttente.current = payload; return; }
+        if (saveEnCours.current) { saveEnAttente.current = true; return; }
         saveEnCours.current = true;
         setSaveStatus("saving");
         let echec = false;
         try {
-          // Mise à jour CONDITIONNELLE : n'écrit que si personne d'autre n'a enregistré entre-temps (sinon blocage de sécurité).
-          let req = supabase.from("app_state").update({ data: payload, updated_at: new Date().toISOString() }).eq("id", "main");
-          req = versionServeur.current ? req.eq("updated_at", versionServeur.current) : req.is("updated_at", null);
-          const { data: lignes, error } = await req.select("updated_at");
-          if (error) echec = true;
-          else if (!lignes || lignes.length === 0) {
-            saveEnCours.current = false; saveEnAttente.current = null;
-            setConflit(true); setSaveStatus("error");
-            return;
-          } else versionServeur.current = lignes[0].updated_at;
+          let aEnvoyer = etatRef.current;
+          if (!baseSync.current) { baseSync.current = {}; majBase(aEnvoyer); }
+          let reussi = false;
+          for (let tentative = 0; tentative < 4 && !reussi; tentative++) {
+            // Mise à jour CONDITIONNELLE : n'écrit que si personne d'autre n'a enregistré depuis notre dernière synchronisation.
+            let req = supabase.from("app_state").update({ data: aEnvoyer, updated_at: new Date().toISOString() }).eq("id", "main");
+            req = versionServeur.current ? req.eq("updated_at", versionServeur.current) : req.is("updated_at", null);
+            const { data: lignes, error } = await req.select("updated_at");
+            if (error) { echec = true; break; }
+            if (lignes && lignes.length > 0) { versionServeur.current = lignes[0].updated_at; majBase(aEnvoyer); reussi = true; break; }
+            // Refusé : quelqu'un d'autre a enregistré entre-temps -> on tente de FUSIONNER au lieu de bloquer.
+            const { data: ligne, error: e2 } = await supabase.from("app_state").select("data, updated_at").eq("id", "main").maybeSingle();
+            if (e2 || !ligne || !ligne.data) { echec = true; break; }
+            const r = fusionnerEtats(aEnvoyer, ligne.data, baseSync.current);
+            if (r.conflit) { saveEnCours.current = false; saveEnAttente.current = false; setConflit(true); setSaveStatus("error"); return; }
+            versionServeur.current = ligne.updated_at;
+            r.adoptes.forEach(k => { setters[k](r.fusion[k]); });
+            majBase(r.fusion, r.adoptes);
+            aEnvoyer = r.fusion;
+          }
+          if (!reussi && !echec) echec = true;
         } catch (e) { echec = true; }
         saveEnCours.current = false;
-        if (saveEnAttente.current) { const suivant = saveEnAttente.current; saveEnAttente.current = null; envoyer(suivant); return; }
+        if (saveEnAttente.current && !echec) { saveEnAttente.current = false; setTimeout(envoyer, 60); return; }
+        saveEnAttente.current = false;
         if (echec) {
           setSaveStatus("error");
           // Nouvelle tentative automatique après 5 secondes (réseau faible ou coupé).
@@ -358,7 +410,7 @@ export default function App() {
           setSaveStatus("saved");
         }
       };
-      envoyer({ classes, students, paiements, staff, paieHist, depenses, matieresConfig, configNiveaux, tranchesEcole, notes, materiels, archives, corbeille, budgets, conduites, config });
+      envoyer();
     }, 800);
     return () => clearTimeout(t);
   }, [classes, students, paiements, staff, paieHist, depenses, matieresConfig, configNiveaux, tranchesEcole, notes, materiels, archives, corbeille, budgets, conduites, config, session, dataLoaded, retrySaveTick]);
@@ -672,12 +724,17 @@ export default function App() {
 
     // Étape 1 : mémoriser la classe de chaque élève, ET les réglages (frais, barème, matières, tranches) tels qu'ils étaient durant l'année qu'on quitte
     const studentClassesQuittee = {};
-    students.forEach(s => { studentClassesQuittee[s.id] = s.classeId; });
-    setArchives(prev => ({ ...prev, [anneeQuittee]: { notes, paiements, paieHist, depenses, materiels, studentClasses: studentClassesQuittee, configNiveaux, matieresConfig, tranchesEcole } }));
+    const studentStatutsQuittee = {};
+    students.forEach(s => { studentClassesQuittee[s.id] = s.classeId; studentStatutsQuittee[s.id] = s.statut || "Nouveau"; });
+    setArchives(prev => ({ ...prev, [anneeQuittee]: { notes, paiements, paieHist, depenses, materiels, studentClasses: studentClassesQuittee, studentStatuts: studentStatutsQuittee, configNiveaux, matieresConfig, tranchesEcole } }));
 
     if (donneesCibles.studentClasses) {
       // On a déjà visité cette année auparavant : on restaure exactement la classe de chacun telle qu'elle était, sans recalculer.
-      setStudents(prev => prev.map(s => donneesCibles.studentClasses[s.id] ? { ...s, classeId: donneesCibles.studentClasses[s.id] } : s));
+      setStudents(prev => prev.map(s => {
+        const restaure = donneesCibles.studentClasses[s.id] ? { ...s, classeId: donneesCibles.studentClasses[s.id] } : s;
+        // Statut (Nouveau/Ancien) tel qu'il était durant cette année, si on l'avait mémorisé ; sinon on ne touche à rien.
+        return donneesCibles.studentStatuts && donneesCibles.studentStatuts[s.id] ? { ...restaure, statut: donneesCibles.studentStatuts[s.id] } : restaure;
+      }));
     } else {
       // Première fois qu'on atteint cette année : on calcule le passage en classe supérieure selon la moyenne annuelle.
       const niveauxOrdonnes = [];
@@ -697,6 +754,8 @@ export default function App() {
         }
         return s;
       }));
+      // Nouvelle année scolaire : tous les élèves déjà inscrits deviennent "Ancien" (seules les inscriptions à venir seront "Nouveau").
+      setStudents(prev => prev.map(s => s.statut === "Ancien" ? s : { ...s, statut: "Ancien" }));
     }
 
     setNotes(donneesCibles.notes || []);
@@ -1306,7 +1365,7 @@ export default function App() {
               <div style={{ fontSize: 12.5, color: C.text, marginBottom: 8 }}>
                 {archives[anneeEnAttente]
                   ? <>Revenir sur <b>{anneeEnAttente}</b> ? Les données de <b>{config.anneeScolaire}</b> seront mises de côté et celles de <b>{anneeEnAttente}</b> restaurées.</>
-                  : <>Passer à <b>{anneeEnAttente}</b> ? Les données de <b>{config.anneeScolaire}</b> (notes, paiements, salaires, dépenses) seront archivées. Les élèves et les classes restent inchangés.</>}
+                  : <>Passer à <b>{anneeEnAttente}</b> ? Les données de <b>{config.anneeScolaire}</b> (notes, paiements, salaires, dépenses) seront archivées. Les classes restent inchangées ; les élèves restent inscrits (passage en classe supérieure selon leur moyenne) et leur statut devient « Ancien ».</>}
               </div>
               <div style={{ display: "flex", gap: 8 }}>
                 <Btn onClick={appliquerChangementAnnee}><Check size={13} /> Confirmer le passage à {anneeEnAttente}</Btn>
@@ -2350,7 +2409,7 @@ export default function App() {
     const totalG = students.filter(s => s.sexe === "M").length, totalF = students.filter(s => s.sexe === "F").length;
     const subtabs = [
       ["effectifs", "Statistiques"], ["suivi", "Suivi par classe"], ["redevables", "Liste des redevables"], ["registre", "Registre"], ["rappel", "Rappel"], ["paiement", "Paiement"],
-      ["stats", "Stats paiement"],
+      ["stats", "Stats paiement"], ["elevesCompta", "Élèves en comptabilité"],
       ["personnel", "Personnel / Paie"], ["depenses", "Dépenses"], ["budget", "Budget"], ["rapport", "Rapport global"], ["rapportMensuel", "Rapport mensuel"], ["parametres", "Paramètres"],
     ];
 
@@ -2691,6 +2750,48 @@ export default function App() {
             </table>
           </Card>
         )}
+
+        {compTab === "elevesCompta" && (() => {
+          // Élèves "passés à la comptabilité" = au moins un versement OU boursier. Calcul en direct : se met à jour à chaque
+          // paiement, suppression, restauration, modification, déplacement de classe et changement d'année.
+          const comptes = students.filter(st => !st.excluStats && (paiements.some(p => p.studentId === st.id) || estBoursier(st)));
+          const parCycle = { prescolaire: 0, primaire: 0, college: 0, lycee: 0, autre: 0 };
+          comptes.forEach(st => { parCycle[cycleDeNiveau(niveauDe(st.classeId))]++; });
+          const nbAnciens = comptes.filter(st => st.statut === "Ancien").length;
+          const boitesCycles = [
+            { cle: "prescolaire", titre: "Préscolaire", sous: "Petite, Moyenne et Grande section", n: parCycle.prescolaire, fond: "linear-gradient(135deg,#A97B2C,#C99A47)" },
+            { cle: "primaire", titre: "Primaire", sous: "1ère à 6ème", n: parCycle.primaire, fond: "linear-gradient(135deg,#25607F,#3F86A8)" },
+            { cle: "college", titre: "Collège", sous: "7ème à 10ème", n: parCycle.college, fond: "linear-gradient(135deg,#4A6B52,#6B9376)" },
+            { cle: "lycee", titre: "Lycée", sous: "11ème à Terminale", n: parCycle.lycee, fond: "linear-gradient(135deg,#5E4570,#85689A)" },
+          ];
+          if (parCycle.autre > 0) boitesCycles.push({ cle: "autre", titre: "Autres", sous: "Niveau hors cycles / sans classe", n: parCycle.autre, fond: "linear-gradient(135deg,#5B645C,#7F897F)" });
+          const boitesStatut = [
+            { cle: "nouveaux", titre: "Nouveaux", sous: "Élèves nouvellement inscrits", n: comptes.length - nbAnciens, fond: "linear-gradient(135deg,#1B6B6B,#3A9494)" },
+            { cle: "anciens", titre: "Anciens", sous: "Élèves déjà inscrits les années précédentes", n: nbAnciens, fond: "linear-gradient(135deg,#34456B,#5A6D9A)" },
+          ];
+          const Boite = ({ b, grand }) => (
+            <div style={{ background: b.fond, color: "#fff", borderRadius: 14, padding: "18px 16px", textAlign: "center", boxShadow: "0 2px 8px rgba(0,0,0,0.12)" }}>
+              <div className="f-mono" style={{ fontSize: grand ? 40 : 32, fontWeight: 600, lineHeight: 1.1 }}>{b.n}</div>
+              <div style={{ fontSize: 13, fontWeight: 700, marginTop: 6, letterSpacing: 0.3 }}>{b.titre}</div>
+              <div style={{ fontSize: 11, opacity: 0.85, marginTop: 2 }}>{b.sous}</div>
+            </div>
+          );
+          const titreSection = { fontSize: 11, fontWeight: 700, color: C.textSoft, textTransform: "uppercase", letterSpacing: 0.6, margin: "18px 0 8px" };
+          return (
+            <div>
+              <div style={{ fontSize: 12, color: C.textSoft, marginBottom: 12 }}>Élèves de l'année {config.anneeScolaire} qui sont passés à la comptabilité : au moins un versement enregistré, ou boursier.</div>
+              <Boite b={{ titre: "Total école", sous: "Tous cycles confondus", n: comptes.length, fond: "linear-gradient(135deg,#1F3A32,#2F5A4C)" }} grand />
+              <div style={titreSection}>Par cycle</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))", gap: 12 }}>
+                {boitesCycles.map(b => <Boite key={b.cle} b={b} />)}
+              </div>
+              <div style={titreSection}>Par statut</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))", gap: 12 }}>
+                {boitesStatut.map(b => <Boite key={b.cle} b={b} />)}
+              </div>
+            </div>
+          );
+        })()}
 
         {compTab === "personnel" && (
           <Card style={{ padding: 0, overflowX: "auto" }}>
